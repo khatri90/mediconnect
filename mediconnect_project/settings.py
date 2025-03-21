@@ -13,7 +13,28 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 import os
 import dj_database_url
+# Add these lines near the top of your settings.py after imports
+import sys
+import psycopg2.extensions
 
+# Update this section in your DATABASE configuration
+if 'DATABASE_URL' in os.environ:
+    # Running on Render.com with PostgreSQL
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('PGDATABASE', 'doctomoris'),
+            'USER': os.environ.get('PGUSER', 'doctomoris_user'),
+            'PASSWORD': os.environ.get('PGPASSWORD', ''),
+            'HOST': os.environ.get('PGHOST', 'dpg-cved947noe9s73ena2eg-a'),
+            'PORT': os.environ.get('PGPORT', '5432'),
+            'OPTIONS': {
+                'connect_timeout': 10,
+                'isolation_level': psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE,
+            },
+            'CONN_MAX_AGE': 0,  # Close connections after each request
+        }
+    }
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
