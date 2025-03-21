@@ -25,7 +25,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-70(*hsc-y&xd&dc+e5jr6zs2*ik+37fb0uyd)878f-*+vzqr9y')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+# TEMPORARILY SET DEBUG TRUE TO SEE DETAILED ERRORS
+DEBUG = True
 
 ALLOWED_HOSTS = [
     'localhost',
@@ -112,7 +113,11 @@ WSGI_APPLICATION = 'mediconnect_project.wsgi.application'
 if 'DATABASE_URL' in os.environ:
     # Running on Render.com with PostgreSQL
     DATABASES = {
-        'default': dj_database_url.config(default=os.environ.get('DATABASE_URL'), conn_max_age=600)
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=0,  # Disable connection pooling to avoid stale connections
+            ssl_require=False,  # Set to True in production
+        )
     }
 else:
     # Running locally with MySQL
@@ -127,22 +132,40 @@ else:
         }
     }
 
-# Improve database connection handling for Render deployment
-if 'DATABASE_URL' in os.environ:
-    DATABASES['default']['CONN_MAX_AGE'] = 0  # Force new connections on Render
-    DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 30,  # Longer timeout for cold starts
-    }
-
-# REST Framework settings
-REST_FRAMEWORK = {
-    'DEFAULT_RENDERER_CLASSES': (
-        'rest_framework.renderers.JSONRenderer',
-    ),
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.TokenAuthentication',
-    ),
-    'DEFAULT_TIMEOUT': 30  # seconds
+# Enhanced logging for debugging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'doctors': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
 }
 
 # Media files for uploads
@@ -166,6 +189,13 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+# Session settings - ensure they work properly with Render
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = 86400  # 1 day in seconds
+SESSION_COOKIE_SECURE = False  # Set to True only if using HTTPS
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
 
 
 # Internationalization
@@ -191,24 +221,12 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email settings
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Change to console to see email output directly
 
 # JWT settings
 JWT_SECRET = SECRET_KEY
 
-# Security settings for production
-if not DEBUG:
-    # HTTPS settings
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    
-    # Set HSTS header
-    SECURE_HSTS_SECONDS = 31536000  # 1 year
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    
-    # Other security settings
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_BROWSER_XSS_FILTER = True
-    X_FRAME_OPTIONS = 'DENY'
+# DISABLE SECURITY SETTINGS TEMPORARILY FOR DEBUGGING
+# SECURE_SSL_REDIRECT = False
+# SESSION_COOKIE_SECURE = False
+# CSRF_COOKIE_SECURE = False
