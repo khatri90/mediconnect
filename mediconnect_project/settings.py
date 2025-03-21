@@ -127,6 +127,24 @@ else:
         }
     }
 
+# Improve database connection handling for Render deployment
+if 'DATABASE_URL' in os.environ:
+    DATABASES['default']['CONN_MAX_AGE'] = 0  # Force new connections on Render
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 30,  # Longer timeout for cold starts
+    }
+
+# REST Framework settings
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+    ),
+    'DEFAULT_TIMEOUT': 30  # seconds
+}
+
 # Media files for uploads
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
