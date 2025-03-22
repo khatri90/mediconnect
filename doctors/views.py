@@ -235,7 +235,43 @@ class ChangePasswordAPIView(APIView):
                 'status': 'error',
                 'message': f'An error occurred: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)            
-
+class ApprovedDoctorsAPIView(APIView):
+    """
+    API view to list all approved doctors
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request, format=None):
+        doctors = Doctor.objects.filter(status='approved')
+        
+        # Format the response with only needed fields
+        formatted_doctors = []
+        for doctor in doctors:
+            # Get profile photo if available
+            profile_photo_url = None
+            try:
+                profile_photo = DoctorDocument.objects.get(
+                    doctor=doctor, 
+                    document_type='profile_photo'
+                )
+                profile_photo_url = request.build_absolute_uri(profile_photo.file.url)
+            except DoctorDocument.DoesNotExist:
+                pass
+                
+            formatted_doctors.append({
+                'id': doctor.id,
+                'name': doctor.full_name,
+                'specialty': doctor.specialty,
+                'profile_photo': profile_photo_url,
+                'years_experience': doctor.years_experience,
+                'location': f"{doctor.city}, {doctor.country}"
+            })
+            
+        return Response({
+            'status': 'success',
+            'doctors': formatted_doctors
+        }, status=status.HTTP_200_OK)
+        
 class DoctorProfileAPIView(APIView):
     """
     API view to retrieve doctor profile information
@@ -287,4 +323,5 @@ class DoctorProfileAPIView(APIView):
                 'status': 'error',
                 'message': 'Doctor not found'
             }, status=status.HTTP_404_NOT_FOUND)
+            
             
