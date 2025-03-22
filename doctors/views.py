@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from rest_framework import status
+from rest_framework import status, permissions  # Added permissions here
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -323,5 +323,3 @@ class DoctorProfileAPIView(APIView):
                 'status': 'error',
                 'message': 'Doctor not found'
             }, status=status.HTTP_404_NOT_FOUND)
-            
-            
