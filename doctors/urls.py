@@ -4,6 +4,7 @@ from .views import DoctorRegistrationAPIView, DoctorRegistrationStatusAPIView, D
 
 urlpatterns = [
     # Removed redundant 'api/' prefix from all paths
+    path('doctors/approved/', ApprovedDoctorsAPIView.as_view(), name='approved-doctors'),
     path('doctors/register/', DoctorRegistrationAPIView.as_view(), name='doctor-register'),
     path('doctors/status/<int:doctor_id>/', DoctorRegistrationStatusAPIView.as_view(), name='doctor-status'),
     path('doctors/login/', DoctorLoginAPIView.as_view(), name='doctor-login'),
