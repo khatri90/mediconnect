@@ -17,6 +17,6 @@ urlpatterns = [
     path('doctors/change-password/', ChangePasswordAPIView.as_view(), name='doctor-change-password'),
     path('doctors/profile/', DoctorProfileAPIView.as_view(), name='doctor-profile'),
     path('doctors/approved/', ApprovedDoctorsAPIView.as_view(), name='approved-doctors'),
-    path('api/doctors/availability/', DoctorAvailabilityAPIView.as_view(), name='doctor-availability')
+    path('doctors/availability/', DoctorAvailabilityAPIView.as_view(), name='doctor-availability')
 
 ]
