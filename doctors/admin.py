@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib import messages
-from .models import Doctor, DoctorDocument, DoctorAccount
+from .models import Doctor, DoctorDocument, DoctorAccount, DoctorAvailability, DoctorAvailabilitySettings
 
 class DoctorDocumentInline(admin.TabularInline):
     model = DoctorDocument
@@ -17,6 +17,18 @@ class DoctorAccountInline(admin.StackedInline):
     def has_add_permission(self, request, obj=None):
         # Prevent adding accounts manually - they are created via signals
         return False
+
+class DoctorAvailabilityInline(admin.TabularInline):
+    model = DoctorAvailability
+    extra = 0
+    fields = ['day_of_week', 'is_available', 'start_time', 'end_time']
+
+class DoctorAvailabilitySettingsInline(admin.StackedInline):
+    model = DoctorAvailabilitySettings
+    can_delete = False
+    verbose_name_plural = 'Availability Settings'
+    fields = ['appointment_duration', 'buffer_time', 'booking_window', 'created_at', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at']
     
 @admin.register(Doctor)
 class DoctorAdmin(admin.ModelAdmin):
@@ -24,8 +36,8 @@ class DoctorAdmin(admin.ModelAdmin):
     list_filter = ['status', 'specialty', 'country']
     search_fields = ['first_name', 'last_name', 'email', 'license_number']
     readonly_fields = ['created_at', 'updated_at']
-    inlines = [DoctorDocumentInline, DoctorAccountInline]  # Added DoctorAccountInline
-    actions = ['approve_doctors']  # Added approve_doctors action
+    inlines = [DoctorDocumentInline, DoctorAccountInline, DoctorAvailabilityInline, DoctorAvailabilitySettingsInline]
+    actions = ['approve_doctors']
     
     fieldsets = (
         ('Personal Information', {
@@ -116,3 +128,16 @@ class DoctorAccountAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Accounts are created automatically
         return False
+
+@admin.register(DoctorAvailability)
+class DoctorAvailabilityAdmin(admin.ModelAdmin):
+    list_display = ['doctor', 'day_of_week', 'is_available', 'start_time', 'end_time']
+    list_filter = ['day_of_week', 'is_available']
+    search_fields = ['doctor__first_name', 'doctor__last_name', 'doctor__email']
+    readonly_fields = ['created_at', 'updated_at']
+
+@admin.register(DoctorAvailabilitySettings)
+class DoctorAvailabilitySettingsAdmin(admin.ModelAdmin):
+    list_display = ['doctor', 'appointment_duration', 'buffer_time', 'booking_window']
+    search_fields = ['doctor__first_name', 'doctor__last_name', 'doctor__email']
+    readonly_fields = ['created_at', 'updated_at']
