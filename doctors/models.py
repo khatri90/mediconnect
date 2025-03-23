@@ -3,6 +3,7 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.hashers import make_password, check_password
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class Doctor(models.Model):
@@ -144,3 +145,63 @@ class DoctorAccount(models.Model):
     def check_password(self, raw_password):
         """Check if the provided password matches the stored hash"""
         return check_password(raw_password, self.password_hash)    
+
+class DoctorAvailability(models.Model):
+    DAY_CHOICES = [
+        ('Monday', 'Monday'),
+        ('Tuesday', 'Tuesday'),
+        ('Wednesday', 'Wednesday'),
+        ('Thursday', 'Thursday'),
+        ('Friday', 'Friday'),
+        ('Saturday', 'Saturday'),
+        ('Sunday', 'Sunday'),
+    ]
+    
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='availabilities')
+    day_of_week = models.CharField(max_length=20, choices=DAY_CHOICES)
+    is_available = models.BooleanField(default=True)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('doctor', 'day_of_week')
+        verbose_name = 'Doctor Availability'
+        verbose_name_plural = 'Doctor Availabilities'
+    
+    def __str__(self):
+        return f"{self.doctor.full_name} - {self.day_of_week} ({self.start_time} to {self.end_time})"
+
+
+class DoctorAvailabilitySettings(models.Model):
+    DURATION_CHOICES = [
+        (15, '15 minutes'),
+        (30, '30 minutes'),
+        (45, '45 minutes'),
+        (60, '60 minutes'),
+    ]
+    
+    BUFFER_TIME_CHOICES = [
+        (0, 'No buffer'),
+        (5, '5 minutes'),
+        (10, '10 minutes'),
+        (15, '15 minutes'),
+    ]
+    
+    BOOKING_WINDOW_CHOICES = [
+        (1, '1 week'),
+        (2, '2 weeks'),
+        (4, '1 month'),
+        (12, '3 months'),
+    ]
+    
+    doctor = models.OneToOneField(Doctor, on_delete=models.CASCADE, related_name='availability_settings')
+    appointment_duration = models.IntegerField(choices=DURATION_CHOICES, default=30)
+    buffer_time = models.IntegerField(choices=BUFFER_TIME_CHOICES, default=0)
+    booking_window = models.IntegerField(choices=BOOKING_WINDOW_CHOICES, default=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Settings for {self.doctor.full_name}"
