@@ -35,14 +35,55 @@ os.makedirs("media/doctor_documents", exist_ok=True)
 img.save("media/doctor_documents/background.jpg")
 '
 
-# Make migrations explicit for all apps to ensure they're created
-echo "Making migrations for all apps..."
-python manage.py makemigrations
-python manage.py makemigrations admin auth contenttypes sessions rest_framework corsheaders doctors
+# Create a special migration for just the Appointment model
+echo "
+from django.db import migrations, models
+import django.db.models.deletion
 
-# Apply migrations with verbosity
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('doctors', '0004_alter_doctoravailability_unique_together'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Appointment',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('patient_id', models.IntegerField()),
+                ('patient_name', models.CharField(max_length=255)),
+                ('patient_email', models.EmailField(max_length=254)),
+                ('patient_phone', models.CharField(blank=True, max_length=20, null=True)),
+                ('appointment_date', models.DateField()),
+                ('start_time', models.TimeField()),
+                ('end_time', models.TimeField()),
+                ('package_type', models.CharField(choices=[('in_person', 'In Person'), ('online', 'Online Consultation')], default='in_person', max_length=20)),
+                ('problem_description', models.TextField(blank=True, null=True)),
+                ('transaction_number', models.CharField(blank=True, max_length=100, null=True)),
+                ('amount', models.DecimalField(blank=True, decimal_places=2, max_digits=10, null=True)),
+                ('status', models.CharField(choices=[('pending', 'Pending Confirmation'), ('confirmed', 'Confirmed'), ('completed', 'Completed'), ('cancelled', 'Cancelled'), ('no_show', 'No Show')], default='pending', max_length=20)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('doctor_notes', models.TextField(blank=True, null=True)),
+                ('admin_notes', models.TextField(blank=True, null=True)),
+                ('doctor', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='appointments', to='doctors.doctor')),
+            ],
+            options={
+                'indexes': [models.Index(fields=['doctor', 'appointment_date'], name='doctors_app_doctor__51c15d_idx'), models.Index(fields=['patient_id', 'status'], name='doctors_app_patient_29f9f5_idx'), models.Index(fields=['appointment_date', 'start_time'], name='doctors_app_appoint_a54061_idx')],
+            },
+        ),
+        migrations.AddConstraint(
+            model_name='appointment',
+            constraint=models.UniqueConstraint(fields=('doctor', 'appointment_date', 'start_time'), name='unique_appointment_slot'),
+        ),
+    ]
+" > doctors/migrations/0005_appointment.py
+
+# Apply migrations with --fake-initial to avoid duplicate table errors
 echo "Applying migrations..."
-python manage.py migrate --noinput --verbosity 2
+python manage.py migrate --fake-initial --noinput
 
 # Create admin user
 echo "Creating admin user..."
@@ -53,33 +94,6 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mediconnect_project.settings')
 django.setup()
 from django.contrib.auth.models import User
 from django.db import connection
-
-# Create tables directly if needed
-with connection.cursor() as cursor:
-    try:
-        cursor.execute(\"\"\"
-        SELECT 1 FROM pg_tables WHERE tablename = 'auth_user';
-        \"\"\")
-        if not cursor.fetchone():
-            print('Creating auth_user table directly...')
-            cursor.execute(\"\"\"
-            CREATE TABLE IF NOT EXISTS auth_user (
-                id SERIAL PRIMARY KEY,
-                password VARCHAR(128) NOT NULL,
-                last_login TIMESTAMP WITH TIME ZONE NULL,
-                is_superuser BOOLEAN NOT NULL,
-                username VARCHAR(150) NOT NULL UNIQUE,
-                first_name VARCHAR(150) NOT NULL,
-                last_name VARCHAR(150) NOT NULL,
-                email VARCHAR(254) NOT NULL,
-                is_staff BOOLEAN NOT NULL,
-                is_active BOOLEAN NOT NULL,
-                date_joined TIMESTAMP WITH TIME ZONE NOT NULL
-            );
-            \"\"\")
-            connection.commit()
-    except Exception as e:
-        print(f'Error checking/creating table: {e}')
 
 # Create admin user
 try:
