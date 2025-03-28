@@ -35,8 +35,44 @@ os.makedirs("media/doctor_documents", exist_ok=True)
 img.save("media/doctor_documents/background.jpg")
 '
 
-# Create a special migration for just the Appointment model
-echo "
+# Find the latest migration and create our custom migration for the Appointment model
+python -c "
+import os
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mediconnect_project.settings')
+django.setup()
+
+import glob
+from django.db import migrations, models
+import django.db.models.deletion
+
+# Find the latest migration
+migration_files = glob.glob('doctors/migrations/[0-9]*.py')
+latest_migration = None
+latest_number = -1
+
+for file in migration_files:
+    filename = os.path.basename(file)
+    parts = filename.split('_')
+    if len(parts) > 0:
+        try:
+            number = int(parts[0])
+            if number > latest_number:
+                latest_number = number
+                latest_migration = filename.replace('.py', '')
+        except ValueError:
+            continue
+
+if latest_migration is None:
+    print('No existing migrations found, will create initial migration')
+    latest_migration = 'initial'
+
+# Create our custom migration for the Appointment model
+next_number = latest_number + 1
+next_migration = f'{next_number:04d}_appointment'
+print(f'Creating migration {next_migration} with dependency on {latest_migration}')
+
+migration_code = f'''
 from django.db import migrations, models
 import django.db.models.deletion
 
@@ -44,7 +80,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('doctors', '0004_alter_doctoravailability_unique_together'),
+        ('doctors', '{latest_migration}'),
     ]
 
     operations = [
@@ -70,16 +106,23 @@ class Migration(migrations.Migration):
                 ('admin_notes', models.TextField(blank=True, null=True)),
                 ('doctor', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='appointments', to='doctors.doctor')),
             ],
-            options={
+            options={{
                 'indexes': [models.Index(fields=['doctor', 'appointment_date'], name='doctors_app_doctor__51c15d_idx'), models.Index(fields=['patient_id', 'status'], name='doctors_app_patient_29f9f5_idx'), models.Index(fields=['appointment_date', 'start_time'], name='doctors_app_appoint_a54061_idx')],
-            },
+            }},
         ),
         migrations.AddConstraint(
             model_name='appointment',
             constraint=models.UniqueConstraint(fields=('doctor', 'appointment_date', 'start_time'), name='unique_appointment_slot'),
         ),
     ]
-" > doctors/migrations/0005_appointment.py
+'''
+
+migration_path = f'doctors/migrations/{next_migration}.py'
+with open(migration_path, 'w') as f:
+    f.write(migration_code)
+
+print(f'Created migration file: {migration_path}')
+"
 
 # Apply migrations with --fake-initial to avoid duplicate table errors
 echo "Applying migrations..."
