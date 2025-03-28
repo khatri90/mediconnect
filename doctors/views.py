@@ -615,10 +615,11 @@ class ApprovedDoctorsAPIView(APIView):
                 'id': doctor.id,
                 'name': doctor.full_name,
                 'specialty': doctor.specialty,
+                'about_me': doctor.about_me,
                 'profile_photo': profile_photo_url,
                 'years_experience': doctor.years_experience,
                 'location': f"{doctor.city}, {doctor.country}"
-                'about_me': doctor.about_me
+                
             })
             
         return Response({
