@@ -35,98 +35,75 @@ os.makedirs("media/doctor_documents", exist_ok=True)
 img.save("media/doctor_documents/background.jpg")
 '
 
-# Find the latest migration and create our custom migration for the Appointment model
+# Create a SQL file to directly create the appointments table
+echo "Creating appointments table directly..."
+cat > create_appointment_table.sql << EOL
+-- Create appointments table
+CREATE TABLE IF NOT EXISTS doctors_appointment (
+    id BIGSERIAL PRIMARY KEY,
+    patient_id INTEGER NOT NULL,
+    patient_name VARCHAR(255) NOT NULL,
+    patient_email VARCHAR(254) NOT NULL,
+    patient_phone VARCHAR(20),
+    appointment_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    package_type VARCHAR(20) NOT NULL,
+    problem_description TEXT,
+    transaction_number VARCHAR(100),
+    amount DECIMAL(10,2),
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    doctor_notes TEXT,
+    admin_notes TEXT,
+    doctor_id BIGINT NOT NULL REFERENCES doctors_doctor(id)
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS doctors_app_doctor__51c15d_idx ON doctors_appointment(doctor_id, appointment_date);
+CREATE INDEX IF NOT EXISTS doctors_app_patient_29f9f5_idx ON doctors_appointment(patient_id, status);
+CREATE INDEX IF NOT EXISTS doctors_app_appoint_a54061_idx ON doctors_appointment(appointment_date, start_time);
+
+-- Create constraint
+ALTER TABLE doctors_appointment DROP CONSTRAINT IF EXISTS unique_appointment_slot;
+ALTER TABLE doctors_appointment ADD CONSTRAINT unique_appointment_slot UNIQUE (doctor_id, appointment_date, start_time);
+
+-- Add migration entry to prevent Django from trying to create this table again
+INSERT INTO django_migrations (app, name, applied) 
+VALUES ('doctors', 'manual_appointment_creation', NOW())
+ON CONFLICT DO NOTHING;
+EOL
+
+# Execute the SQL file directly
+echo "Executing SQL to create appointments table..."
 python -c "
 import os
-import django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mediconnect_project.settings')
-django.setup()
+import psycopg2
 
-import glob
-from django.db import migrations, models
-import django.db.models.deletion
+# Connect to the database
+conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+conn.autocommit = True  # Set autocommit mode
+cursor = conn.cursor()
 
-# Find the latest migration
-migration_files = glob.glob('doctors/migrations/[0-9]*.py')
-latest_migration = None
-latest_number = -1
+# Read the SQL file
+with open('create_appointment_table.sql', 'r') as f:
+    sql = f.read()
 
-for file in migration_files:
-    filename = os.path.basename(file)
-    parts = filename.split('_')
-    if len(parts) > 0:
-        try:
-            number = int(parts[0])
-            if number > latest_number:
-                latest_number = number
-                latest_migration = filename.replace('.py', '')
-        except ValueError:
-            continue
-
-if latest_migration is None:
-    print('No existing migrations found, will create initial migration')
-    latest_migration = 'initial'
-
-# Create our custom migration for the Appointment model
-next_number = latest_number + 1
-next_migration = f'{next_number:04d}_appointment'
-print(f'Creating migration {next_migration} with dependency on {latest_migration}')
-
-migration_code = f'''
-from django.db import migrations, models
-import django.db.models.deletion
-
-
-class Migration(migrations.Migration):
-
-    dependencies = [
-        ('doctors', '{latest_migration}'),
-    ]
-
-    operations = [
-        migrations.CreateModel(
-            name='Appointment',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('patient_id', models.IntegerField()),
-                ('patient_name', models.CharField(max_length=255)),
-                ('patient_email', models.EmailField(max_length=254)),
-                ('patient_phone', models.CharField(blank=True, max_length=20, null=True)),
-                ('appointment_date', models.DateField()),
-                ('start_time', models.TimeField()),
-                ('end_time', models.TimeField()),
-                ('package_type', models.CharField(choices=[('in_person', 'In Person'), ('online', 'Online Consultation')], default='in_person', max_length=20)),
-                ('problem_description', models.TextField(blank=True, null=True)),
-                ('transaction_number', models.CharField(blank=True, max_length=100, null=True)),
-                ('amount', models.DecimalField(blank=True, decimal_places=2, max_digits=10, null=True)),
-                ('status', models.CharField(choices=[('pending', 'Pending Confirmation'), ('confirmed', 'Confirmed'), ('completed', 'Completed'), ('cancelled', 'Cancelled'), ('no_show', 'No Show')], default='pending', max_length=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('doctor_notes', models.TextField(blank=True, null=True)),
-                ('admin_notes', models.TextField(blank=True, null=True)),
-                ('doctor', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='appointments', to='doctors.doctor')),
-            ],
-            options={{
-                'indexes': [models.Index(fields=['doctor', 'appointment_date'], name='doctors_app_doctor__51c15d_idx'), models.Index(fields=['patient_id', 'status'], name='doctors_app_patient_29f9f5_idx'), models.Index(fields=['appointment_date', 'start_time'], name='doctors_app_appoint_a54061_idx')],
-            }},
-        ),
-        migrations.AddConstraint(
-            model_name='appointment',
-            constraint=models.UniqueConstraint(fields=('doctor', 'appointment_date', 'start_time'), name='unique_appointment_slot'),
-        ),
-    ]
-'''
-
-migration_path = f'doctors/migrations/{next_migration}.py'
-with open(migration_path, 'w') as f:
-    f.write(migration_code)
-
-print(f'Created migration file: {migration_path}')
+# Execute the SQL
+try:
+    cursor.execute(sql)
+    print('SQL executed successfully')
+except Exception as e:
+    print(f'Error executing SQL: {e}')
+finally:
+    cursor.close()
+    conn.close()
 "
 
-# Apply migrations with --fake-initial to avoid duplicate table errors
-echo "Applying migrations..."
-python manage.py migrate --fake-initial --noinput
+# Mark all migrations as applied without running them
+echo "Marking all migrations as applied without actually running them..."
+python manage.py migrate --fake
 
 # Create admin user
 echo "Creating admin user..."
