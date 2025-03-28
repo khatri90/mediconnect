@@ -1,7 +1,52 @@
 from django.contrib import admin
 from django.contrib import messages
 from .models import Doctor, DoctorDocument, DoctorAccount, DoctorAvailability, DoctorAvailabilitySettings
+from .models import Appointment
 
+@admin.register(Appointment)
+class AppointmentAdmin(admin.ModelAdmin):
+    list_display = ['doctor', 'patient_name', 'appointment_date', 'start_time', 'status', 'package_type']
+    list_filter = ['status', 'package_type', 'appointment_date']
+    search_fields = ['doctor__first_name', 'doctor__last_name', 'patient_name', 'patient_email']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Appointment Information', {
+            'fields': (
+                'doctor', 
+                ('appointment_date', 'start_time', 'end_time'),
+                'status',
+                'package_type'
+            )
+        }),
+        ('Patient Information', {
+            'fields': (
+                'patient_id',
+                'patient_name',
+                'patient_email',
+                'patient_phone'
+            )
+        }),
+        ('Details', {
+            'fields': (
+                'problem_description',
+                'transaction_number',
+                'amount'
+            )
+        }),
+        ('Notes', {
+            'fields': (
+                'doctor_notes',
+                'admin_notes'
+            )
+        }),
+        ('Metadata', {
+            'fields': (
+                ('created_at', 'updated_at'),
+            ),
+            'classes': ('collapse',)
+        }),
+    )
 class DoctorDocumentInline(admin.TabularInline):
     model = DoctorDocument
     extra = 0

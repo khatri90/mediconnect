@@ -21,6 +21,10 @@ from .serializers import (
 )
 import json
 import traceback
+import datetime
+from django.db.models import Q
+from .models import Appointment
+from .serializers import AppointmentSerializer, AppointmentCreateSerializer
 
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
@@ -34,6 +38,301 @@ def generate_token(doctor_id):
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+class AppointmentSlotAPIView(APIView):
+    """
+    API view to get available appointment slots for a doctor
+    """
+    permission_classes = [permissions.AllowAny]  # Allow any user to see slots
+    
+    def get(self, request, doctor_id, date, format=None):
+        try:
+            # Convert date string to date object
+            appointment_date = datetime.datetime.strptime(date, '%Y-%m-%d').date()
+            
+            # Get the doctor
+            doctor = Doctor.objects.get(id=doctor_id)
+            
+            # Get day of week
+            day_of_week = appointment_date.strftime('%A')
+            
+            # Check if doctor is available on this day
+            try:
+                availability = DoctorAvailability.objects.get(
+                    doctor=doctor, 
+                    day_of_week=day_of_week
+                )
+                
+                if not availability.is_available:
+                    return Response({
+                        'status': 'error',
+                        'message': f'Doctor is not available on {day_of_week}'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                # Get doctor's availability settings
+                settings = DoctorAvailabilitySettings.objects.get(doctor=doctor)
+                
+                # Calculate time slots based on doctor's availability and appointment duration
+                start_time = availability.start_time
+                end_time = availability.end_time
+                duration = settings.appointment_duration
+                buffer = settings.buffer_time
+                
+                # Get existing appointments for this day
+                existing_appointments = Appointment.objects.filter(
+                    doctor=doctor,
+                    appointment_date=appointment_date,
+                    status__in=['pending', 'confirmed']
+                )
+                
+                # Generate all possible time slots
+                slots = []
+                current_time = start_time
+                
+                # Calculate total minutes in the day
+                start_minutes = start_time.hour * 60 + start_time.minute
+                end_minutes = end_time.hour * 60 + end_time.minute
+                total_minutes = end_minutes - start_minutes
+                
+                slot_duration = duration + buffer
+                num_slots = total_minutes // slot_duration
+                
+                for i in range(num_slots):
+                    slot_start = datetime.time(
+                        current_time.hour, 
+                        current_time.minute
+                    )
+                    
+                    # Calculate slot end time
+                    minutes = current_time.hour * 60 + current_time.minute + duration
+                    slot_end_hour = minutes // 60
+                    slot_end_minute = minutes % 60
+                    
+                    # Handle time overflow
+                    if slot_end_hour >= 24:
+                        slot_end_hour = 23
+                        slot_end_minute = 59
+                        
+                    slot_end = datetime.time(slot_end_hour, slot_end_minute)
+                    
+                    # Check if slot conflicts with any existing appointment
+                    is_available = True
+                    for appt in existing_appointments:
+                        if (
+                            (slot_start >= appt.start_time and slot_start < appt.end_time) or
+                            (slot_end > appt.start_time and slot_end <= appt.end_time) or
+                            (slot_start <= appt.start_time and slot_end >= appt.end_time)
+                        ):
+                            is_available = False
+                            break
+                            
+                    slots.append({
+                        'start_time': slot_start.strftime('%H:%M'),
+                        'end_time': slot_end.strftime('%H:%M'),
+                        'is_available': is_available
+                    })
+                    
+                    # Move to next slot
+                    minutes = current_time.hour * 60 + current_time.minute + slot_duration
+                    
+                    # Handle time overflow
+                    if minutes >= 24 * 60:
+                        break
+                        
+                    current_time = datetime.time(minutes // 60, minutes % 60)
+                    
+                    # Stop if we've gone past the end time
+                    if current_time > end_time:
+                        break
+                    
+                return Response({
+                    'status': 'success',
+                    'date': date,
+                    'day': day_of_week,
+                    'slots': slots
+                })
+                
+            except DoctorAvailability.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': f'No availability settings found for {day_of_week}'
+                }, status=status.HTTP_404_NOT_FOUND)
+                
+        except Doctor.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Doctor not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class PatientAppointmentAPIView(APIView):
+    """
+    API endpoint for patients to manage their appointments
+    """
+    def get(self, request, format=None):
+        """Get all appointments for a patient"""
+        # Get patient ID from authorization token
+        patient_id = self._get_patient_id_from_token(request)
+        
+        if not patient_id:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid or missing authentication token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+        # Find all appointments for this patient
+        appointments = Appointment.objects.filter(patient_id=patient_id)
+        
+        # Serialize and return
+        serializer = AppointmentSerializer(appointments, many=True)
+        return Response({
+            'status': 'success',
+            'appointments': serializer.data
+        })
+        
+    def post(self, request, format=None):
+        """Create a new appointment for a patient"""
+        # Get patient ID and info from token
+        patient_id = self._get_patient_id_from_token(request)
+        patient_info = self._get_patient_info_from_token(request)
+        
+        if not patient_id or not patient_info:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid or missing authentication token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+        # Add patient info to request data
+        data = request.data.copy()
+        data.update({
+            'patient_id': patient_id,
+            'patient_name': patient_info.get('name', ''),
+            'patient_email': patient_info.get('email', ''),
+            'patient_phone': patient_info.get('phone', '')
+        })
+        
+        # Create appointment
+        serializer = AppointmentCreateSerializer(data=data)
+        if serializer.is_valid():
+            appointment = serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'Appointment created successfully',
+                'appointment': AppointmentSerializer(appointment).data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid appointment data',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _get_patient_id_from_token(self, request):
+        """Extract patient ID from the authorization token"""
+        auth_header = request.headers.get('Authorization', '')
+        
+        if not auth_header.startswith('Bearer '):
+            return None
+            
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # Decode the JWT token
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            return payload.get('patient_id')
+        except Exception as e:
+            print(f"Error decoding token: {str(e)}")
+            return None
+    
+    def _get_patient_info_from_token(self, request):
+        """Extract patient information from the authorization token"""
+        auth_header = request.headers.get('Authorization', '')
+        
+        if not auth_header.startswith('Bearer '):
+            return None
+            
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # Decode the JWT token
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            return {
+                'name': payload.get('name', ''),
+                'email': payload.get('email', ''),
+                'phone': payload.get('phone', '')
+            }
+        except Exception as e:
+            print(f"Error decoding token: {str(e)}")
+            return None
+
+class CrossApplicationAuthAPIView(APIView):
+    """
+    API view to authenticate users from the Flutter app (doctomoris)
+    and issue a special token they can use to access the mediconnect API
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, format=None):
+        """Authenticate a user from the doctomoris app"""
+        # Get authentication credentials
+        doctomoris_token = request.data.get('token')
+        patient_id = request.data.get('patient_id')
+        patient_name = request.data.get('name')
+        patient_email = request.data.get('email')
+        patient_phone = request.data.get('phone')
+        
+        if not doctomoris_token or not patient_id or not patient_email:
+            return Response({
+                'status': 'error',
+                'message': 'Missing required authentication data'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # In a production environment, you would validate the token with doctomoris
+            # For now, we'll trust the data sent
+            
+            # Generate a new token for mediconnect
+            mediconnect_token = self._generate_patient_token({
+                'patient_id': patient_id,
+                'name': patient_name,
+                'email': patient_email,
+                'phone': patient_phone
+            })
+            
+            return Response({
+                'status': 'success',
+                'token': mediconnect_token,
+                'expires_in': 3600  # Token expiry in seconds (1 hour)
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Authentication failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _generate_patient_token(self, patient_info):
+        """
+        Generate a token that patients can use to authenticate with mediconnect APIs
+        """
+        # Create a payload with patient information
+        payload = {
+            'patient_id': patient_info['patient_id'],
+            'name': patient_info['name'],
+            'email': patient_info['email'],
+            'phone': patient_info.get('phone', ''),
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # 1 hour expiry
+        }
+        
+        # Sign the payload with a secret key
+        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        
+        return token
+    
 def verify_token(token):
     """Verify a JWT token and return the doctor_id"""
     try:

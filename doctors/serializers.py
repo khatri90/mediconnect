@@ -3,6 +3,7 @@
 from rest_framework import serializers
 from .models import Doctor, DoctorDocument
 from .models import DoctorAvailability, DoctorAvailabilitySettings
+from .models import Appointment
 
 class DoctorDocumentSerializer(serializers.ModelSerializer):
     class Meta:
@@ -19,7 +20,68 @@ class DoctorSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
 
+class AppointmentSerializer(serializers.ModelSerializer):
+    doctor_name = serializers.CharField(source='doctor.full_name', read_only=True)
+    
+    class Meta:
+        model = Appointment
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
+class AppointmentCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Appointment
+        exclude = ['status', 'doctor_notes', 'admin_notes', 'created_at', 'updated_at']
+        
+    def validate(self, data):
+        """
+        Validate that the appointment doesn't conflict with others
+        and is within doctor's availability
+        """
+        doctor = data['doctor']
+        date = data['appointment_date']
+        start_time = data['start_time']
+        end_time = data['end_time']
+        
+        # Convert date to weekday name (Monday, Tuesday, etc.)
+        day_of_week = date.strftime('%A')
+        
+        # Check if doctor is available on this day and time
+        try:
+            availability = DoctorAvailability.objects.get(
+                doctor=doctor,
+                day_of_week=day_of_week
+            )
+            
+            if not availability.is_available:
+                raise serializers.ValidationError(f"Doctor is not available on {day_of_week}")
+                
+            if start_time < availability.start_time or end_time > availability.end_time:
+                raise serializers.ValidationError(
+                    f"Appointment time must be between {availability.start_time} and {availability.end_time}"
+                )
+                
+        except DoctorAvailability.DoesNotExist:
+            raise serializers.ValidationError(f"No availability settings found for {day_of_week}")
+            
+        # Check for conflicts with existing appointments
+        conflicts = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_date=date,
+            status__in=['pending', 'confirmed'],  # Only check active appointments
+        ).filter(
+            # Appointment starts during another appointment
+            models.Q(start_time__lte=start_time, end_time__gt=start_time) |
+            # Appointment ends during another appointment
+            models.Q(start_time__lt=end_time, end_time__gte=end_time) |
+            # Appointment contains another appointment
+            models.Q(start_time__gte=start_time, end_time__lte=end_time)
+        )
+        
+        if conflicts.exists():
+            raise serializers.ValidationError("This time slot is already booked")
+            
+        return data
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
     profile_photo = serializers.FileField(write_only=True, required=False)
     medical_license = serializers.FileField(write_only=True, required=False)

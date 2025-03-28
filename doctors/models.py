@@ -205,3 +205,66 @@ class DoctorAvailabilitySettings(models.Model):
     
     def __str__(self):
         return f"Settings for {self.doctor.full_name}"
+
+# Add the Appointment model after all the other models
+class Appointment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending Confirmation'),
+        ('confirmed', 'Confirmed'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+        ('no_show', 'No Show'),
+    ]
+    
+    PACKAGE_TYPE_CHOICES = [
+        ('in_person', 'In Person'),
+        ('online', 'Online Consultation'),
+    ]
+    
+    # Doctor from mediconnect
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='appointments')
+    
+    # Patient from doctomoris (represented by ID and basic info)
+    patient_id = models.IntegerField()  # ID from the patient database
+    patient_name = models.CharField(max_length=255)
+    patient_email = models.EmailField()
+    patient_phone = models.CharField(max_length=20, blank=True, null=True)
+    
+    # Appointment details
+    appointment_date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    
+    # Additional details
+    package_type = models.CharField(max_length=20, choices=PACKAGE_TYPE_CHOICES, default='in_person')
+    problem_description = models.TextField(blank=True, null=True)
+    
+    # Payment information
+    transaction_number = models.CharField(max_length=100, blank=True, null=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    
+    # Status and metadata
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Optional notes
+    doctor_notes = models.TextField(blank=True, null=True)
+    admin_notes = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"Appointment with {self.doctor.full_name} for {self.patient_name} on {self.appointment_date} at {self.start_time}"
+        
+    class Meta:
+        # Ensure no double booking for the same doctor
+        constraints = [
+            models.UniqueConstraint(
+                fields=['doctor', 'appointment_date', 'start_time'], 
+                name='unique_appointment_slot'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['doctor', 'appointment_date']),
+            models.Index(fields=['patient_id', 'status']),
+            models.Index(fields=['appointment_date', 'start_time']),
+        ]
