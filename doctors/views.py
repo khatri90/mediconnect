@@ -618,6 +618,7 @@ class ApprovedDoctorsAPIView(APIView):
                 'profile_photo': profile_photo_url,
                 'years_experience': doctor.years_experience,
                 'location': f"{doctor.city}, {doctor.country}"
+                'about_me': doctor.about_me
             })
             
         return Response({
