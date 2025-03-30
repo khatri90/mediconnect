@@ -16,7 +16,7 @@ from .models import Doctor, DoctorAvailability, DoctorAvailabilitySettings
 from .serializers import (
     DoctorAvailabilitySerializer, 
     DoctorAvailabilitySettingsSerializer,
-    DoctorAvailabilityUpdateSerializer
+    DoctorAvailabilityUpdateSerializer,
     DoctorWeeklyScheduleAPIView
 )
 import json
