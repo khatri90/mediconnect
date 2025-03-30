@@ -17,6 +17,7 @@ from .serializers import (
     DoctorAvailabilitySerializer, 
     DoctorAvailabilitySettingsSerializer,
     DoctorAvailabilityUpdateSerializer
+    DoctorWeeklyScheduleAPIView
 )
 import json
 import traceback
