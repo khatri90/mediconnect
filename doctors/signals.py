@@ -2,10 +2,11 @@
 
 import random
 import string
+import time
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
 from django.contrib.auth.hashers import make_password
-from .models import Doctor, DoctorAccount
+from .models import Doctor, DoctorAccount, Appointment
 import logging
 from django.core.mail import send_mail
 
@@ -26,6 +27,13 @@ def generate_random_password(length=10):
     password_list = list(password)
     random.shuffle(password_list)
     return ''.join(password_list)
+
+
+def generate_hex_id(length=6):
+    """Generate a random hexadecimal ID of specified length"""
+    hex_chars = "0123456789ABCDEF"
+    return ''.join(random.choice(hex_chars) for _ in range(length))
+
 
 @receiver(pre_save, sender=Doctor)
 def doctor_status_changed(sender, instance, **kwargs):
@@ -107,3 +115,34 @@ The MediConnect Team
     except Exception as e:
         # Catch any exceptions to prevent signal from breaking admin
         logger.error(f"Error in doctor_status_changed signal: {str(e)}")
+
+
+@receiver(pre_save, sender=Appointment)
+def set_appointment_hex_id(sender, instance, **kwargs):
+    """Signal to set a unique hexadecimal ID for each appointment"""
+    try:
+        # Only generate ID if one doesn't exist yet
+        if not instance.appointment_id:
+            # Try up to 10 times to generate a unique ID
+            for _ in range(10):
+                new_id = generate_hex_id()
+                if not Appointment.objects.filter(appointment_id=new_id).exists():
+                    instance.appointment_id = new_id
+                    logger.info(f"Generated appointment ID: {new_id}")
+                    return
+                    
+            # If we failed 10 times, try with a timestamp-based approach
+            timestamp = hex(int(time.time()))[2:]  # Convert timestamp to hex and remove '0x'
+            new_id = timestamp[-6:].upper()  # Use last 6 chars and uppercase
+            
+            # If still not unique, add random chars until it is
+            while Appointment.objects.filter(appointment_id=new_id).exists():
+                new_id = new_id[:-1] + random.choice("0123456789ABCDEF")
+                
+            instance.appointment_id = new_id
+            logger.info(f"Generated timestamp-based appointment ID: {new_id}")
+                
+    except Exception as e:
+        logger.error(f"Error generating appointment ID: {str(e)}")
+        # Don't block the save even if ID generation fails
+        # If no ID is set, the database will still be consistent

@@ -208,6 +208,9 @@ class DoctorAvailabilitySettings(models.Model):
 
 # Add the Appointment model after all the other models
 class Appointment(models.Model):
+    
+    appointment_id = models.CharField(max_length=6, unique=True, blank=True, 
+                                      help_text="Unique 6-character hexadecimal ID")
     STATUS_CHOICES = [
         ('pending', 'Pending Confirmation'),
         ('confirmed', 'Confirmed'),
