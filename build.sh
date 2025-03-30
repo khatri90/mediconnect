@@ -135,4 +135,40 @@ except Exception as e:
 echo "Collecting static files..."
 python manage.py collectstatic --no-input
 
+# Add appointment_id column to the appointments table
+echo "Adding appointment_id column to appointments table..."
+python -c "
+import os
+import psycopg2
+
+# Connect to the database
+conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+conn.autocommit = True  # Set autocommit mode
+cursor = conn.cursor()
+
+# Check if column exists
+cursor.execute(\"\"\"
+SELECT column_name 
+FROM information_schema.columns 
+WHERE table_name='doctors_appointment' AND column_name='appointment_id';
+\"\"\")
+column_exists = cursor.fetchone()
+
+if not column_exists:
+    # Add the column
+    try:
+        cursor.execute(\"\"\"
+        ALTER TABLE doctors_appointment 
+        ADD COLUMN appointment_id VARCHAR(6) UNIQUE;
+        \"\"\")
+        print('Column appointment_id added successfully')
+    except Exception as e:
+        print(f'Error adding column: {e}')
+else:
+    print('Column appointment_id already exists')
+
+cursor.close()
+conn.close()
+"
+
 echo "Build completed successfully."
