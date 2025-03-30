@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from rest_framework import status, permissions 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -6,7 +6,6 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Doctor, DoctorDocument, DoctorAccount
 from .serializers import DoctorSerializer, DoctorRegistrationSerializer
 from django.utils import timezone
-from .models import DoctorAccount
 from django.contrib.auth.hashers import check_password
 from django.conf import settings
 import jwt
@@ -17,11 +16,10 @@ from .models import Doctor, DoctorAvailability, DoctorAvailabilitySettings
 from .serializers import (
     DoctorAvailabilitySerializer, 
     DoctorAvailabilitySettingsSerializer,
-    DoctorAvailabilityUpdateSerializer  # Add this import
+    DoctorAvailabilityUpdateSerializer
 )
 import json
 import traceback
-import datetime
 from django.db.models import Q
 from .models import Appointment
 from .serializers import AppointmentSerializer, AppointmentCreateSerializer
@@ -30,6 +28,7 @@ from .serializers import AppointmentSerializer, AppointmentCreateSerializer
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DELTA = datetime.timedelta(days=7)
+
 def generate_token(doctor_id):
     """Generate a JWT token for the doctor"""
     payload = {
@@ -37,6 +36,16 @@ def generate_token(doctor_id):
         'exp': datetime.datetime.utcnow() + JWT_EXPIRATION_DELTA
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_token(token):
+    """Verify a JWT token and return the doctor_id"""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload.get('doctor_id')
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
 
 class AppointmentSlotAPIView(APIView):
     """
@@ -332,16 +341,6 @@ class CrossApplicationAuthAPIView(APIView):
         token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
         
         return token
-    
-def verify_token(token):
-    """Verify a JWT token and return the doctor_id"""
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload.get('doctor_id')
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
 
 class DoctorRegistrationAPIView(APIView):
     """
@@ -369,7 +368,6 @@ class DoctorRegistrationAPIView(APIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-# If you need to check the status of a registration later
 class DoctorRegistrationStatusAPIView(APIView):
     """
     API view to check the status of a doctor registration
@@ -597,7 +595,6 @@ class DoctorProfileAPIView(APIView):
                 'status': 'error',
                 'message': 'Doctor not found'
             }, status=status.HTTP_404_NOT_FOUND)
-
 
 class DoctorAvailabilityAPIView(APIView):
     """
@@ -924,4 +921,88 @@ class ApprovedDoctorsAPIView(APIView):
         return Response({
             'status': 'success',
             'doctors': formatted_doctors
-        }, status=status.HTTP_200_OK)        
+        }, status=status.HTTP_200_OK)
+
+class DoctorWeeklyScheduleAPIView(APIView):
+    """
+    API view to get a doctor's weekly schedule without authentication
+    """
+    permission_classes = [permissions.AllowAny]  # Allow any user to see the schedule
+    
+    def get(self, request, doctor_id, format=None):
+        try:
+            # Find doctor by ID
+            doctor = get_object_or_404(Doctor, id=doctor_id)
+            
+            # Get availability data
+            availabilities = DoctorAvailability.objects.filter(doctor=doctor)
+            
+            # If no availabilities exist, return empty response
+            if not availabilities.exists():
+                return Response({
+                    'status': 'error',
+                    'message': 'No availability schedule found for this doctor'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Get settings
+            try:
+                settings = DoctorAvailabilitySettings.objects.get(doctor=doctor)
+            except DoctorAvailabilitySettings.DoesNotExist:
+                settings = None
+            
+            # Format data for frontend
+            days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            
+            # Create a lookup dictionary for existing availabilities
+            availability_dict = {}
+            for avail in availabilities:
+                availability_dict[avail.day_of_week] = {
+                    'is_available': avail.is_available,
+                    'start_time': avail.start_time.strftime('%H:%M'),
+                    'end_time': avail.end_time.strftime('%H:%M')
+                }
+            
+            # Build the weekly schedule with all days
+            weekly_schedule = []
+            for day in days:
+                if day in availability_dict:
+                    avail = availability_dict[day]
+                    weekly_schedule.append({
+                        'day': day,
+                        'available': avail['is_available'],
+                        'startTime': avail['start_time'],
+                        'endTime': avail['end_time']
+                    })
+                else:
+                    # Default values for any missing days
+                    is_available = day not in ['Saturday', 'Sunday']
+                    weekly_schedule.append({
+                        'day': day,
+                        'available': is_available,
+                        'startTime': '09:00',
+                        'endTime': '17:00'
+                    })
+            
+            # Return formatted data
+            response_data = {
+                'status': 'success',
+                'doctor_name': doctor.full_name,
+                'doctor_specialty': doctor.specialty,
+                'weeklySchedule': weekly_schedule,
+            }
+            
+            # Add settings if available
+            if settings:
+                response_data['settings'] = {
+                    'appointmentDuration': settings.appointment_duration,
+                    'bufferTime': settings.buffer_time,
+                    'bookingWindow': settings.booking_window
+                }
+            
+            return Response(response_data)
+                
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
