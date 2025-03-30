@@ -19,8 +19,7 @@ from .serializers import (
     DoctorAvailabilityUpdateSerializer
 )
 from .views import (
-    DoctorRegistrationAPIView,
-    DoctorWeeklyScheduleAPIView  # This should come from views.py
+    DoctorRegistrationAPIView
 )
 import json
 import traceback
