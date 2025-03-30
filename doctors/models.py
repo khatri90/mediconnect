@@ -212,6 +212,8 @@ class Appointment(models.Model):
     appointment_id = models.CharField(
         max_length=6, 
         unique=True,
+        blank=True,  # Allow blank during form submission
+        null=True,   # Allow NULL in database
         help_text="Unique 6-character hexadecimal ID"
     )
     STATUS_CHOICES = [

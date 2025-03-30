@@ -32,6 +32,7 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
         exclude = ['status', 'doctor_notes', 'admin_notes', 'created_at', 'updated_at']
+        read_only_fields = ['appointment_id']  # Mark appointment_id as read-only
         
     def validate(self, data):
         """
