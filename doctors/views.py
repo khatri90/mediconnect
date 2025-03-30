@@ -18,9 +18,6 @@ from .serializers import (
     DoctorAvailabilitySettingsSerializer,
     DoctorAvailabilityUpdateSerializer
 )
-from .views import (
-    DoctorRegistrationAPIView
-)
 import json
 import traceback
 from django.db.models import Q
