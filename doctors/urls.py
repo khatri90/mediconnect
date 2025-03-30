@@ -8,6 +8,7 @@ from .views import (
     ApprovedDoctorsAPIView, 
     DoctorAvailabilityAPIView,
     AppointmentSlotAPIView,
+    DoctorWeeklyScheduleAPIView,
     PatientAppointmentAPIView,
     CrossApplicationAuthAPIView
 )
