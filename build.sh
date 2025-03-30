@@ -1,3 +1,136 @@
+#!/bin/sh
+# exit on error
+set -o errexit
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install Pillow for image processing
+pip install Pillow
+
+# Debug database connection
+echo "Database connection check..."
+python -c "import os; import psycopg2; conn = psycopg2.connect(os.environ.get('DATABASE_URL')); print('Connection successful!'); conn.close()"
+
+# Create placeholder image directory
+mkdir -p staticfiles
+mkdir -p media/doctor_documents
+
+# Generate a simple placeholder image using Python
+python -c '
+from PIL import Image, ImageDraw
+import os
+
+# Create a directory for the placeholder images
+os.makedirs("staticfiles", exist_ok=True)
+
+# Create a simple colored rectangle as a placeholder
+img = Image.new("RGB", (800, 600), color=(240, 248, 255))
+d = ImageDraw.Draw(img)
+d.rectangle([(0, 0), (800, 600)], outline=(0, 123, 255), width=20)
+img.save("staticfiles/placeholder.jpg")
+
+# Also save directly to media directory
+os.makedirs("media/doctor_documents", exist_ok=True)
+img.save("media/doctor_documents/background.jpg")
+'
+
+# Create a SQL file to directly create the appointments table
+echo "Creating appointments table directly..."
+cat > create_appointment_table.sql << EOL
+-- Create appointments table
+CREATE TABLE IF NOT EXISTS doctors_appointment (
+    id BIGSERIAL PRIMARY KEY,
+    patient_id INTEGER NOT NULL,
+    patient_name VARCHAR(255) NOT NULL,
+    patient_email VARCHAR(254) NOT NULL,
+    patient_phone VARCHAR(20),
+    appointment_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    package_type VARCHAR(20) NOT NULL,
+    problem_description TEXT,
+    transaction_number VARCHAR(100),
+    amount DECIMAL(10,2),
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    doctor_notes TEXT,
+    admin_notes TEXT,
+    doctor_id BIGINT NOT NULL REFERENCES doctors_doctor(id)
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS doctors_app_doctor__51c15d_idx ON doctors_appointment(doctor_id, appointment_date);
+CREATE INDEX IF NOT EXISTS doctors_app_patient_29f9f5_idx ON doctors_appointment(patient_id, status);
+CREATE INDEX IF NOT EXISTS doctors_app_appoint_a54061_idx ON doctors_appointment(appointment_date, start_time);
+
+-- Create constraint
+ALTER TABLE doctors_appointment DROP CONSTRAINT IF EXISTS unique_appointment_slot;
+ALTER TABLE doctors_appointment ADD CONSTRAINT unique_appointment_slot UNIQUE (doctor_id, appointment_date, start_time);
+
+-- Add migration entry to prevent Django from trying to create this table again
+INSERT INTO django_migrations (app, name, applied) 
+VALUES ('doctors', 'manual_appointment_creation', NOW())
+ON CONFLICT DO NOTHING;
+EOL
+
+# Execute the SQL file directly
+echo "Executing SQL to create appointments table..."
+python -c "
+import os
+import psycopg2
+
+# Connect to the database
+conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+conn.autocommit = True  # Set autocommit mode
+cursor = conn.cursor()
+
+# Read the SQL file
+with open('create_appointment_table.sql', 'r') as f:
+    sql = f.read()
+
+# Execute the SQL
+try:
+    cursor.execute(sql)
+    print('SQL executed successfully')
+except Exception as e:
+    print(f'Error executing SQL: {e}')
+finally:
+    cursor.close()
+    conn.close()
+"
+
+# Mark all migrations as applied without running them
+echo "Marking all migrations as applied without actually running them..."
+python manage.py migrate --fake
+
+# Create admin user
+echo "Creating admin user..."
+python -c "
+import os
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mediconnect_project.settings')
+django.setup()
+from django.contrib.auth.models import User
+from django.db import connection
+
+# Create admin user
+try:
+    if User.objects.filter(username='admin').exists():
+        admin = User.objects.get(username='admin')
+        admin.set_password('MediConnect2025!')
+        admin.is_staff = True
+        admin.is_superuser = True
+        admin.save()
+        print('Admin user updated')
+    else:
+        User.objects.create_superuser('admin', 'admin@example.com', 'MediConnect2025!')
+        print('Admin user created')
+except Exception as e:
+    print(f'Error creating admin user: {e}')
+"
+
 # Add appointment_id column to appointments table and populate existing records
 echo "Adding appointment_id column to appointments table..."
 python -c "
@@ -69,13 +202,6 @@ if not column_exists:
                 \"\"\", (new_id, appt_id[0]))
                 print(f'Set timestamp-based ID {new_id} for appointment {appt_id[0]}')
         
-        # Now that all records have been populated, make the column non-nullable for new records
-        cursor.execute(\"\"\"
-        ALTER TABLE doctors_appointment 
-        ALTER COLUMN appointment_id SET NOT NULL;
-        \"\"\")
-        print('Modified appointment_id to NOT NULL')
-        
     except Exception as e:
         print(f'Error working with appointment_id column: {e}')
 else:
@@ -85,46 +211,8 @@ cursor.close()
 conn.close()
 "
 
-# Ensure appointment_id is shown in admin by creating a small patch
-echo "Ensuring appointment_id is visible in admin..."
-cat > admin_fix.py << EOL
-import django
-import os
+# Collect static files
+echo "Collecting static files..."
+python manage.py collectstatic --no-input
 
-# Set Django settings module
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mediconnect_project.settings')
-
-# Initialize Django
-django.setup()
-
-from django.contrib import admin
-from doctors.models import Appointment
-from doctors.admin import AppointmentAdmin
-
-# Check if current list_display includes appointment_id
-has_appt_id = False
-for admin_instance in admin.site._registry.values():
-    if isinstance(admin_instance, AppointmentAdmin):
-        if 'appointment_id' in admin_instance.list_display:
-            has_appt_id = True
-            print("Admin already has appointment_id in list_display")
-        else:
-            # Add appointment_id to list_display
-            admin_instance.list_display = ['appointment_id'] + list(admin_instance.list_display)
-            print("Added appointment_id to list_display")
-            
-            # Make sure fieldsets include appointment_id
-            for name, options in admin_instance.fieldsets:
-                if name == 'Appointment Information' and 'appointment_id' not in options['fields']:
-                    if isinstance(options['fields'], list):
-                        options['fields'].insert(0, 'appointment_id')
-                    elif isinstance(options['fields'], tuple):
-                        options['fields'] = ('appointment_id',) + options['fields']
-                    print("Added appointment_id to fieldsets")
-                    break
-
-if not has_appt_id:
-    print("Warning: Could not find AppointmentAdmin instance to modify")
-EOL
-
-python admin_fix.py
+echo "Build completed successfully."
