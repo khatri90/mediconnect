@@ -5,14 +5,15 @@ from .models import Appointment
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
-    list_display = ['doctor', 'patient_name', 'appointment_date', 'start_time', 'status', 'package_type']
+    list_display = ['appointment_id', 'doctor', 'patient_name', 'appointment_date', 'start_time', 'status', 'package_type']
     list_filter = ['status', 'package_type', 'appointment_date']
-    search_fields = ['doctor__first_name', 'doctor__last_name', 'patient_name', 'patient_email']
+    search_fields = ['appointment_id', 'doctor__first_name', 'doctor__last_name', 'patient_name', 'patient_email']
     readonly_fields = ['created_at', 'updated_at']
     
     fieldsets = (
         ('Appointment Information', {
             'fields': (
+                'appointment_id',
                 'doctor', 
                 ('appointment_date', 'start_time', 'end_time'),
                 'status',
