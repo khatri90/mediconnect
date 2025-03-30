@@ -16,8 +16,11 @@ from .models import Doctor, DoctorAvailability, DoctorAvailabilitySettings
 from .serializers import (
     DoctorAvailabilitySerializer, 
     DoctorAvailabilitySettingsSerializer,
-    DoctorAvailabilityUpdateSerializer,
-    DoctorWeeklyScheduleAPIView
+    DoctorAvailabilityUpdateSerializer
+)
+from .views import (
+    DoctorRegistrationAPIView,
+    DoctorWeeklyScheduleAPIView  # This should come from views.py
 )
 import json
 import traceback
