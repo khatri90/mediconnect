@@ -4,6 +4,7 @@ from rest_framework import serializers
 from .models import Doctor, DoctorDocument
 from .models import DoctorAvailability, DoctorAvailabilitySettings
 from .models import Appointment
+from django.db import models
 
 class DoctorDocumentSerializer(serializers.ModelSerializer):
     class Meta:
