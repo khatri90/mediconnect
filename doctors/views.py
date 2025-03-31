@@ -23,7 +23,14 @@ import traceback
 from django.db.models import Q
 from .models import Appointment
 from .serializers import AppointmentSerializer, AppointmentCreateSerializer
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
+from django.views import View
+from django.http import JsonResponse
+from django.db.models import Count, Sum
+from django.utils import timezone
 
+from .models import Doctor, Appointment, DoctorAccount
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
@@ -1065,3 +1072,129 @@ class DoctorWeeklyScheduleAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class DoctorDashboardView(View):
+    """View for the doctor dashboard page"""
+    
+    @method_decorator(login_required)
+    def get(self, request):
+        # Get the doctor associated with the current user
+        try:
+            doctor_id = request.session.get('doctor_id')
+            doctor = Doctor.objects.get(id=doctor_id)
+        except Doctor.DoesNotExist:
+            return JsonResponse({'error': 'Doctor profile not found'}, status=404)
+        
+        # Get current date for dashboard
+        current_date = timezone.now().strftime('%d %b, %Y')
+        
+        # Calculate date range for statistics (current month)
+        today = timezone.now().date()
+        start_date = today.replace(day=1)  # First day of current month
+        end_date = (today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1)  # Last day of current month
+        date_range = f"{start_date.strftime('%-d %b %Y')} to {end_date.strftime('%-d %b %Y')}"
+        
+        # Get appointment statistics
+        total_appointments = Appointment.objects.filter(doctor=doctor).count()
+        upcoming_appointments = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_date__gte=today,
+            status__in=['pending', 'confirmed']
+        ).count()
+        
+        # Calculate revenue
+        revenue = Appointment.objects.filter(
+            doctor=doctor,
+            status__in=['completed', 'confirmed']
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Get upcoming appointments for display
+        upcoming_appointment_list = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_date__gte=today,
+            status__in=['pending', 'confirmed']
+        ).order_by('appointment_date', 'start_time')[:3]
+        
+        # Format appointment data for display
+        appointments_data = []
+        for appointment in upcoming_appointment_list:
+            # Calculate time until appointment
+            appointment_datetime = datetime.datetime.combine(
+                appointment.appointment_date, 
+                appointment.start_time,
+                tzinfo=timezone.get_current_timezone()
+            )
+            now = timezone.now()
+            time_diff = appointment_datetime - now
+            
+            # Format the time difference for display
+            if time_diff.days < 0:
+                time_status = "Overdue"
+            elif time_diff.days > 0:
+                time_status = f"In {time_diff.days} days"
+            else:
+                hours = time_diff.seconds // 3600
+                minutes = (time_diff.seconds % 3600) // 60
+                if hours > 0:
+                    time_status = f"Due in {hours}h {minutes}m"
+                else:
+                    time_status = f"Due in {minutes}m"
+            
+            appointments_data.append({
+                'patient_name': appointment.patient_name,
+                'appointment_date': appointment.appointment_date.strftime('%d/%m/%Y'),
+                'time_status': time_status
+            })
+        
+        # Get revenue data for chart
+        # This would ideally be grouped by month
+        # For now, we'll create a simplified version
+        monthly_revenue = []
+        for i in range(1, 7):  # Last 6 months
+            month_date = today.replace(day=1) - datetime.timedelta(days=30*i)
+            month_end = (month_date.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
+            
+            month_revenue = Appointment.objects.filter(
+                doctor=doctor,
+                appointment_date__gte=month_date,
+                appointment_date__lte=month_end,
+                status__in=['completed', 'confirmed']
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            
+            monthly_revenue.append({
+                'month': month_date.strftime('%b'),
+                'revenue': float(month_revenue)
+            })
+        
+        monthly_revenue.reverse()  # Show in chronological order
+        
+        # Get patient reviews
+        # Since the actual system might not have reviews, we'll use placeholder data
+        # In a real system, you would fetch this from a reviews table
+        reviews_data = [
+            {'patient_name': 'Pem Kushal', 'date': '01 Jun, 2024', 'status': 'Course completed'},
+            {'patient_name': 'Alex Chen', 'date': '15 May, 2024', 'status': 'Course completed'},
+            {'patient_name': 'Maria Lopez', 'date': '28 Apr, 2024', 'status': 'Course completed'},
+        ]
+        
+        # Fetch doctor's profile photo if available
+        profile_photo = None
+        try:
+            profile_photo_obj = doctor.documents.get(document_type='profile_photo')
+            profile_photo = profile_photo_obj.file.url
+        except:
+            profile_photo = '/static/assets/1.png'  # Default photo
+        
+        context = {
+            'doctor': doctor,
+            'current_date': current_date,
+            'date_range': date_range,
+            'total_appointments': total_appointments,
+            'upcoming_appointments': upcoming_appointments,
+            'revenue': revenue,
+            'appointments': appointments_data,
+            'monthly_revenue': monthly_revenue,
+            'reviews': reviews_data,
+            'profile_photo': profile_photo,
+        }
+        
+        return render(request, 'doctors/dashboard.html', context)
