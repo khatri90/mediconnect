@@ -10,7 +10,8 @@ from .views import (
     AppointmentSlotAPIView,
     DoctorWeeklyScheduleAPIView,
     PatientAppointmentAPIView,
-    CrossApplicationAuthAPIView
+    CrossApplicationAuthAPIView,
+    AppointmentCancelView
 )
 
 urlpatterns = [
@@ -28,4 +29,6 @@ urlpatterns = [
     path('doctors/available-slots/<int:doctor_id>/<str:date>/', AppointmentSlotAPIView.as_view(), name='doctor-available-slots'),
     path('appointments/', PatientAppointmentAPIView.as_view(), name='patient-appointments'),
     path('auth/patient/', CrossApplicationAuthAPIView.as_view(), name='patient-auth'),
+    # Add this to your urlpatterns list
+    path('appointments/cancel/', AppointmentCancelView.as_view(), name='cancel-appointment'),
 ]

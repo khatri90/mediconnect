@@ -46,7 +46,66 @@ def verify_token(token):
         return None
     except jwt.InvalidTokenError:
         return None
-
+class AppointmentCancelView(APIView):
+    """
+    API endpoint for canceling an appointment
+    """
+    permission_classes = [permissions.AllowAny]  # Adjust permissions as needed
+    
+    def post(self, request, format=None):
+        """Cancel an appointment"""
+        # Get appointment_id and reason from request
+        appointment_id = request.data.get('appointment_id')
+        reason = request.data.get('reason', 'Cancelled by patient')
+        patient_id = request.data.get('patient_id')
+        
+        if not appointment_id:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            # Find the appointment
+            appointment = Appointment.objects.get(appointment_id=appointment_id)
+            
+            # Check if the appointment belongs to the patient (if patient_id provided)
+            if patient_id and appointment.patient_id != int(patient_id):
+                return Response({
+                    'status': 'error',
+                    'message': 'Unauthorized to cancel this appointment'
+                }, status=status.HTTP_403_FORBIDDEN)
+                
+            # Check if the appointment can be cancelled (not completed or already cancelled)
+            if appointment.status in ['completed', 'cancelled']:
+                return Response({
+                    'status': 'error',
+                    'message': f'Cannot cancel an appointment that is already {appointment.status}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Update the appointment status
+            appointment.status = 'cancelled'
+            appointment.admin_notes = f"Cancelled by patient. Reason: {reason}"
+            appointment.save()
+            
+            return Response({
+                'status': 'success',
+                'message': 'Appointment cancelled successfully',
+                'appointment_id': appointment_id
+            })
+            
+        except Appointment.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        except Exception as e:
+            print(f"Error cancelling appointment: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': f'Error cancelling appointment: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class AppointmentSlotAPIView(APIView):
     """
     API view to get available appointment slots for a doctor
