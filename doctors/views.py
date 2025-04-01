@@ -29,7 +29,7 @@ from django.views import View
 from django.http import JsonResponse
 from django.db.models import Count, Sum
 from django.utils import timezone
-
+from django.db.models.functions import TruncMonth
 from .models import Doctor, Appointment, DoctorAccount
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
@@ -1072,129 +1072,246 @@ class DoctorWeeklyScheduleAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-class DoctorDashboardView(View):
-    """View for the doctor dashboard page"""
-    
-    @method_decorator(login_required)
-    def get(self, request):
-        # Get the doctor associated with the current user
-        try:
-            doctor_id = request.session.get('doctor_id')
-            doctor = Doctor.objects.get(id=doctor_id)
-        except Doctor.DoesNotExist:
-            return JsonResponse({'error': 'Doctor profile not found'}, status=404)
+class DoctorDashboardStatsAPIView(APIView):
+    """
+    API endpoint to get dashboard statistics for a doctor
+    """
+    def get(self, request, format=None):
+        # Get doctor ID from token
+        auth_header = request.headers.get('Authorization')
         
-        # Get current date for dashboard
-        current_date = timezone.now().strftime('%d %b, %Y')
-        
-        # Calculate date range for statistics (current month)
-        today = timezone.now().date()
-        start_date = today.replace(day=1)  # First day of current month
-        end_date = (today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1)  # Last day of current month
-        date_range = f"{start_date.strftime('%-d %b %Y')} to {end_date.strftime('%-d %b %Y')}"
-        
-        # Get appointment statistics
-        total_appointments = Appointment.objects.filter(doctor=doctor).count()
-        upcoming_appointments = Appointment.objects.filter(
-            doctor=doctor,
-            appointment_date__gte=today,
-            status__in=['pending', 'confirmed']
-        ).count()
-        
-        # Calculate revenue
-        revenue = Appointment.objects.filter(
-            doctor=doctor,
-            status__in=['completed', 'confirmed']
-        ).aggregate(total=Sum('amount'))['total'] or 0
-        
-        # Get upcoming appointments for display
-        upcoming_appointment_list = Appointment.objects.filter(
-            doctor=doctor,
-            appointment_date__gte=today,
-            status__in=['pending', 'confirmed']
-        ).order_by('appointment_date', 'start_time')[:3]
-        
-        # Format appointment data for display
-        appointments_data = []
-        for appointment in upcoming_appointment_list:
-            # Calculate time until appointment
-            appointment_datetime = datetime.datetime.combine(
-                appointment.appointment_date, 
-                appointment.start_time,
-                tzinfo=timezone.get_current_timezone()
-            )
-            now = timezone.now()
-            time_diff = appointment_datetime - now
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({
+                'status': 'error',
+                'message': 'Authentication token required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
             
-            # Format the time difference for display
-            if time_diff.days < 0:
-                time_status = "Overdue"
-            elif time_diff.days > 0:
-                time_status = f"In {time_diff.days} days"
+        token = auth_header.split(' ')[1]
+        doctor_id = verify_token(token)
+        
+        if not doctor_id:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid or expired token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            # Get current date
+            today = timezone.now().date()
+            
+            # Total appointments for this doctor
+            total_appointments = Appointment.objects.filter(doctor_id=doctor_id).count()
+            
+            # Upcoming appointments (today or future, not cancelled/completed)
+            upcoming_appointments = Appointment.objects.filter(
+                doctor_id=doctor_id,
+                appointment_date__gte=today,
+                status__in=['pending', 'confirmed']
+            ).count()
+            
+            # Total revenue
+            revenue_data = Appointment.objects.filter(
+                doctor_id=doctor_id,
+                status__in=['completed', 'confirmed']  # Only count revenue from completed/confirmed appointments
+            ).aggregate(total_revenue=Sum('amount'))
+            
+            total_revenue = revenue_data['total_revenue'] or 0
+            
+            return Response({
+                'status': 'success',
+                'stats': {
+                    'total_appointments': total_appointments,
+                    'upcoming_appointments': upcoming_appointments,
+                    'total_revenue': float(total_revenue)
+                }
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DoctorRevenueChartAPIView(APIView):
+    """
+    API endpoint to get revenue chart data for a doctor
+    """
+    def get(self, request, format=None):
+        # Get doctor ID from token
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({
+                'status': 'error',
+                'message': 'Authentication token required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+        token = auth_header.split(' ')[1]
+        doctor_id = verify_token(token)
+        
+        if not doctor_id:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid or expired token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            # Get query parameters
+            chart_type = request.query_params.get('type', 'monthly')
+            year = int(request.query_params.get('year', timezone.now().year))
+            
+            if chart_type == 'monthly':
+                # Monthly revenue for current year
+                monthly_revenue = Appointment.objects.filter(
+                    doctor_id=doctor_id,
+                    status__in=['completed', 'confirmed'],
+                    appointment_date__year=year
+                ).annotate(
+                    month=TruncMonth('appointment_date')
+                ).values('month').annotate(
+                    revenue=Sum('amount')
+                ).order_by('month')
+                
+                # Format the data for chart.js
+                months = []
+                revenues = []
+                
+                # Create a dictionary with all months initialized to 0
+                all_months = {month: 0 for month in range(1, 13)}
+                
+                # Fill in the actual data
+                for item in monthly_revenue:
+                    month_num = item['month'].month
+                    all_months[month_num] = float(item['revenue'] or 0)
+                
+                # Convert to sorted lists for the response
+                for month_num, revenue in sorted(all_months.items()):
+                    # Get month name
+                    month_name = datetime.date(2000, month_num, 1).strftime('%b')
+                    months.append(month_name)
+                    revenues.append(revenue)
+                
+                return Response({
+                    'status': 'success',
+                    'chart_data': {
+                        'labels': months,
+                        'datasets': [
+                            {
+                                'label': f'Revenue for {year}',
+                                'data': revenues
+                            }
+                        ]
+                    }
+                })
+                
+            elif chart_type == 'category':
+                # Revenue by appointment type
+                category_revenue = Appointment.objects.filter(
+                    doctor_id=doctor_id,
+                    status__in=['completed', 'confirmed'],
+                    appointment_date__year=year
+                ).values('package_type').annotate(
+                    revenue=Sum('amount')
+                ).order_by('package_type')
+                
+                # Format the data for chart.js
+                categories = []
+                revenues = []
+                
+                for item in category_revenue:
+                    # Convert from snake_case to Title Case for display
+                    category_name = item['package_type'].replace('_', ' ').title()
+                    categories.append(category_name)
+                    revenues.append(float(item['revenue'] or 0))
+                
+                return Response({
+                    'status': 'success',
+                    'chart_data': {
+                        'labels': categories,
+                        'datasets': [
+                            {
+                                'label': f'Revenue by Category ({year})',
+                                'data': revenues
+                            }
+                        ]
+                    }
+                })
+                
             else:
-                hours = time_diff.seconds // 3600
-                minutes = (time_diff.seconds % 3600) // 60
-                if hours > 0:
-                    time_status = f"Due in {hours}h {minutes}m"
-                else:
-                    time_status = f"Due in {minutes}m"
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid chart type'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DoctorRecentAppointmentsAPIView(APIView):
+    """
+    API endpoint to get recent appointments for a doctor
+    """
+    def get(self, request, format=None):
+        # Get doctor ID from token
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({
+                'status': 'error',
+                'message': 'Authentication token required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
             
-            appointments_data.append({
-                'patient_name': appointment.patient_name,
-                'appointment_date': appointment.appointment_date.strftime('%d/%m/%Y'),
-                'time_status': time_status
-            })
+        token = auth_header.split(' ')[1]
+        doctor_id = verify_token(token)
         
-        # Get revenue data for chart
-        # This would ideally be grouped by month
-        # For now, we'll create a simplified version
-        monthly_revenue = []
-        for i in range(1, 7):  # Last 6 months
-            month_date = today.replace(day=1) - datetime.timedelta(days=30*i)
-            month_end = (month_date.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
-            
-            month_revenue = Appointment.objects.filter(
-                doctor=doctor,
-                appointment_date__gte=month_date,
-                appointment_date__lte=month_end,
-                status__in=['completed', 'confirmed']
-            ).aggregate(total=Sum('amount'))['total'] or 0
-            
-            monthly_revenue.append({
-                'month': month_date.strftime('%b'),
-                'revenue': float(month_revenue)
-            })
+        if not doctor_id:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid or expired token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
         
-        monthly_revenue.reverse()  # Show in chronological order
-        
-        # Get patient reviews
-        # Since the actual system might not have reviews, we'll use placeholder data
-        # In a real system, you would fetch this from a reviews table
-        reviews_data = [
-            {'patient_name': 'Pem Kushal', 'date': '01 Jun, 2024', 'status': 'Course completed'},
-            {'patient_name': 'Alex Chen', 'date': '15 May, 2024', 'status': 'Course completed'},
-            {'patient_name': 'Maria Lopez', 'date': '28 Apr, 2024', 'status': 'Course completed'},
-        ]
-        
-        # Fetch doctor's profile photo if available
-        profile_photo = None
         try:
-            profile_photo_obj = doctor.documents.get(document_type='profile_photo')
-            profile_photo = profile_photo_obj.file.url
-        except:
-            profile_photo = '/static/assets/1.png'  # Default photo
-        
-        context = {
-            'doctor': doctor,
-            'current_date': current_date,
-            'date_range': date_range,
-            'total_appointments': total_appointments,
-            'upcoming_appointments': upcoming_appointments,
-            'revenue': revenue,
-            'appointments': appointments_data,
-            'monthly_revenue': monthly_revenue,
-            'reviews': reviews_data,
-            'profile_photo': profile_photo,
-        }
-        
-        return render(request, 'doctors/dashboard.html', context)
+            # Get limit parameter (default to 5)
+            limit = int(request.query_params.get('limit', 5))
+            
+            # Get recent appointments, prioritizing upcoming ones
+            today = timezone.now().date()
+            
+            # First get upcoming appointments
+            upcoming_appointments = Appointment.objects.filter(
+                doctor_id=doctor_id,
+                appointment_date__gte=today,
+                status__in=['pending', 'confirmed']
+            ).order_by('appointment_date', 'start_time')[:limit]
+            
+            upcoming_count = upcoming_appointments.count()
+            
+            # If we have fewer than the limit, also get some recent past appointments
+            recent_appointments = []
+            if upcoming_count < limit:
+                recent_past = Appointment.objects.filter(
+                    doctor_id=doctor_id,
+                    appointment_date__lt=today
+                ).order_by('-appointment_date', '-start_time')[:limit - upcoming_count]
+                
+                recent_appointments = list(upcoming_appointments) + list(recent_past)
+            else:
+                recent_appointments = upcoming_appointments
+            
+            # Serialize the appointments
+            serializer = AppointmentSerializer(recent_appointments, many=True)
+            
+            return Response({
+                'status': 'success',
+                'appointments': serializer.data
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
