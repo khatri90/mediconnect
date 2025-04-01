@@ -1,3 +1,5 @@
+# doctors/urls.py - Add these URL routes
+
 from django.urls import path
 from .views import (
     DoctorRegistrationAPIView, 
@@ -11,7 +13,11 @@ from .views import (
     DoctorWeeklyScheduleAPIView,
     PatientAppointmentAPIView,
     CrossApplicationAuthAPIView,
-    AppointmentCancelView
+    AppointmentCancelView,
+    # New dashboard views
+    DoctorDashboardStatsAPIView,
+    DoctorRevenueChartAPIView,
+    DoctorRecentAppointmentsAPIView
 )
 
 urlpatterns = [
@@ -23,12 +29,16 @@ urlpatterns = [
     path('doctors/profile/', DoctorProfileAPIView.as_view(), name='doctor-profile'),
     path('doctors/approved/', ApprovedDoctorsAPIView.as_view(), name='approved-doctors'),
     path('doctors/availability/', DoctorAvailabilityAPIView.as_view(), name='doctor-availability'),
-
     path('doctors/<int:doctor_id>/schedule/', DoctorWeeklyScheduleAPIView.as_view(), name='doctor-weekly-schedule'),
-    # New paths for appointments
+    
+    # Appointment paths
     path('doctors/available-slots/<int:doctor_id>/<str:date>/', AppointmentSlotAPIView.as_view(), name='doctor-available-slots'),
     path('appointments/', PatientAppointmentAPIView.as_view(), name='patient-appointments'),
     path('auth/patient/', CrossApplicationAuthAPIView.as_view(), name='patient-auth'),
-    # Add this to your urlpatterns list
     path('appointments/cancel/', AppointmentCancelView.as_view(), name='cancel-appointment'),
+    
+    # New dashboard paths
+    path('doctors/dashboard/stats/', DoctorDashboardStatsAPIView.as_view(), name='doctor-dashboard-stats'),
+    path('doctors/dashboard/revenue-chart/', DoctorRevenueChartAPIView.as_view(), name='doctor-revenue-chart'),
+    path('doctors/dashboard/recent-appointments/', DoctorRecentAppointmentsAPIView.as_view(), name='doctor-recent-appointments'),
 ]
