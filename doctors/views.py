@@ -1253,7 +1253,7 @@ class DoctorRevenueChartAPIView(APIView):
 
 class DoctorRecentAppointmentsAPIView(APIView):
     """
-    API endpoint to get recent appointments for a doctor
+    API endpoint to get all appointments for a doctor with proper pagination support
     """
     def get(self, request, format=None):
         # Get doctor ID from token
@@ -1275,42 +1275,33 @@ class DoctorRecentAppointmentsAPIView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
         
         try:
-            # Get limit parameter (default to 5)
-            limit = int(request.query_params.get('limit', 5))
+            # Get limit parameter with a much higher default (1000 to ensure we get all appointments)
+            limit = int(request.query_params.get('limit', 1000))
             
-            # Get recent appointments, prioritizing upcoming ones
-            today = timezone.now().date()
+            # Log total appointments in database for debugging
+            total_in_db = Appointment.objects.filter(doctor_id=doctor_id).count()
+            print(f"Total appointments in DB for doctor {doctor_id}: {total_in_db}")
+            print(f"Requesting up to {limit} appointments")
             
-            # First get upcoming appointments
-            upcoming_appointments = Appointment.objects.filter(
-                doctor_id=doctor_id,
-                appointment_date__gte=today,
-                status__in=['pending', 'confirmed']
-            ).order_by('appointment_date', 'start_time')[:limit]
-            
-            upcoming_count = upcoming_appointments.count()
-            
-            # If we have fewer than the limit, also get some recent past appointments
-            recent_appointments = []
-            if upcoming_count < limit:
-                recent_past = Appointment.objects.filter(
-                    doctor_id=doctor_id,
-                    appointment_date__lt=today
-                ).order_by('-appointment_date', '-start_time')[:limit - upcoming_count]
-                
-                recent_appointments = list(upcoming_appointments) + list(recent_past)
-            else:
-                recent_appointments = upcoming_appointments
+            # Get all appointments for this doctor, regardless of date or status
+            # We'll let the frontend handle filtering and pagination
+            all_appointments = Appointment.objects.filter(
+                doctor_id=doctor_id
+            ).order_by('-appointment_date', '-start_time')[:limit]
             
             # Serialize the appointments
-            serializer = AppointmentSerializer(recent_appointments, many=True)
+            serializer = AppointmentSerializer(all_appointments, many=True)
+            
+            print(f"Returning {len(serializer.data)} appointments")
             
             return Response({
                 'status': 'success',
+                'total_count': total_in_db,
                 'appointments': serializer.data
             })
             
         except Exception as e:
+            print(f"Error in DoctorRecentAppointmentsAPIView: {str(e)}")
             return Response({
                 'status': 'error',
                 'message': str(e)
