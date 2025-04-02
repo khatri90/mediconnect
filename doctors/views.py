@@ -20,6 +20,7 @@ from .serializers import (
 )
 import json
 import traceback
+from django.db import models
 from django.db.models import Q
 from .models import Appointment
 from .serializers import AppointmentSerializer, AppointmentCreateSerializer
@@ -1319,7 +1320,7 @@ class AppointmentRescheduleView(APIView):
         appointment_date = request.data.get('appointment_date')
         start_time = request.data.get('start_time')
         end_time = request.data.get('end_time')
-        status = request.data.get('status', 'pending')  # Default to pending after rescheduling
+        new_status = request.data.get('status', 'pending')  # Default to pending after rescheduling
         
         # Validate required fields
         if not appointment_id or not appointment_date or not start_time or not end_time:
@@ -1338,7 +1339,7 @@ class AppointmentRescheduleView(APIView):
             except Appointment.DoesNotExist:
                 # Try to find by numeric ID
                 try:
-                    appointment = Appointment.objects.get(id=appointment_id)
+                    appointment = Appointment.objects.get(id=int(appointment_id))
                 except (Appointment.DoesNotExist, ValueError):
                     return Response({
                         'status': 'error',
@@ -1364,7 +1365,7 @@ class AppointmentRescheduleView(APIView):
                 # Parse times from string format
                 if isinstance(start_time, str):
                     if ':' in start_time:
-                        if 'AM' in start_time or 'PM' in start_time:
+                        if 'AM' in start_time.upper() or 'PM' in start_time.upper():
                             # Parse 12-hour format (e.g., "9:00 AM")
                             parsed_start_time = datetime.strptime(start_time, '%I:%M %p').time()
                         else:
@@ -1380,7 +1381,7 @@ class AppointmentRescheduleView(APIView):
                     
                 if isinstance(end_time, str):
                     if ':' in end_time:
-                        if 'AM' in end_time or 'PM' in end_time:
+                        if 'AM' in end_time.upper() or 'PM' in end_time.upper():
                             # Parse 12-hour format (e.g., "9:30 AM")
                             parsed_end_time = datetime.strptime(end_time, '%I:%M %p').time()
                         else:
@@ -1460,7 +1461,7 @@ class AppointmentRescheduleView(APIView):
             appointment.appointment_date = parsed_date
             appointment.start_time = parsed_start_time
             appointment.end_time = parsed_end_time
-            appointment.status = status
+            appointment.status = new_status
             appointment.save()
             
             # Add a note about the rescheduling
@@ -1486,8 +1487,9 @@ class AppointmentRescheduleView(APIView):
             
         except Exception as e:
             import traceback
+            trace = traceback.format_exc()
             print(f"Error rescheduling appointment: {str(e)}")
-            print(traceback.format_exc())
+            print(trace)
             return Response({
                 'status': 'error',
                 'message': f'Error rescheduling appointment: {str(e)}'
