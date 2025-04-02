@@ -14,6 +14,7 @@ from .views import (
     PatientAppointmentAPIView,
     CrossApplicationAuthAPIView,
     AppointmentCancelView,
+    AppointmentRescheduleView,
     # New dashboard views
     DoctorDashboardStatsAPIView,
     DoctorRevenueChartAPIView,
@@ -36,6 +37,7 @@ urlpatterns = [
     path('appointments/', PatientAppointmentAPIView.as_view(), name='patient-appointments'),
     path('auth/patient/', CrossApplicationAuthAPIView.as_view(), name='patient-auth'),
     path('appointments/cancel/', AppointmentCancelView.as_view(), name='cancel-appointment'),
+    path('appointments/reschedule/', AppointmentRescheduleView.as_view(), name='reschedule-appointment'),
     
     # New dashboard paths
     path('doctors/dashboard/stats/', DoctorDashboardStatsAPIView.as_view(), name='doctor-dashboard-stats'),
