@@ -1306,3 +1306,189 @@ class DoctorRecentAppointmentsAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class AppointmentRescheduleView(APIView):
+    """
+    API endpoint for rescheduling appointments
+    """
+    permission_classes = [permissions.AllowAny]  # Adjust permissions as needed
+    
+    def post(self, request, format=None):
+        """Reschedule an appointment"""
+        # Get appointment details from request
+        appointment_id = request.data.get('appointment_id')
+        appointment_date = request.data.get('appointment_date')
+        start_time = request.data.get('start_time')
+        end_time = request.data.get('end_time')
+        status = request.data.get('status', 'pending')  # Default to pending after rescheduling
+        
+        # Validate required fields
+        if not appointment_id or not appointment_date or not start_time or not end_time:
+            return Response({
+                'status': 'error',
+                'message': 'Missing required fields: appointment_id, appointment_date, start_time, end_time'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Find the appointment
+            appointment = None
+            
+            # Try to find by hex ID first (most common case)
+            try:
+                appointment = Appointment.objects.get(appointment_id=appointment_id)
+            except Appointment.DoesNotExist:
+                # Try to find by numeric ID
+                try:
+                    appointment = Appointment.objects.get(id=appointment_id)
+                except (Appointment.DoesNotExist, ValueError):
+                    return Response({
+                        'status': 'error',
+                        'message': 'Appointment not found'
+                    }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Validate the appointment can be rescheduled
+            if appointment.status in ['completed']:
+                return Response({
+                    'status': 'error',
+                    'message': f'Cannot reschedule an appointment that is already {appointment.status}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Parse date string to date object
+            from datetime import datetime
+            try:
+                # Parse date from ISO format (YYYY-MM-DD)
+                if isinstance(appointment_date, str):
+                    parsed_date = datetime.strptime(appointment_date, '%Y-%m-%d').date()
+                else:
+                    parsed_date = appointment_date
+                    
+                # Parse times from string format
+                if isinstance(start_time, str):
+                    if ':' in start_time:
+                        if 'AM' in start_time or 'PM' in start_time:
+                            # Parse 12-hour format (e.g., "9:00 AM")
+                            parsed_start_time = datetime.strptime(start_time, '%I:%M %p').time()
+                        else:
+                            # Parse 24-hour format (e.g., "09:00")
+                            parsed_start_time = datetime.strptime(start_time, '%H:%M').time()
+                    else:
+                        return Response({
+                            'status': 'error',
+                            'message': f'Invalid start time format: {start_time}'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    parsed_start_time = start_time
+                    
+                if isinstance(end_time, str):
+                    if ':' in end_time:
+                        if 'AM' in end_time or 'PM' in end_time:
+                            # Parse 12-hour format (e.g., "9:30 AM")
+                            parsed_end_time = datetime.strptime(end_time, '%I:%M %p').time()
+                        else:
+                            # Parse 24-hour format (e.g., "09:30")
+                            parsed_end_time = datetime.strptime(end_time, '%H:%M').time()
+                    else:
+                        return Response({
+                            'status': 'error',
+                            'message': f'Invalid end time format: {end_time}'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    parsed_end_time = end_time
+                    
+            except ValueError as e:
+                return Response({
+                    'status': 'error',
+                    'message': f'Error parsing date or time: {str(e)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if the new time slot conflicts with existing appointments
+            doctor = appointment.doctor
+            conflicting_appointments = Appointment.objects.filter(
+                doctor=doctor,
+                appointment_date=parsed_date,
+                status__in=['pending', 'confirmed']
+            ).exclude(
+                id=appointment.id  # Exclude the current appointment
+            ).filter(
+                # Time slot overlaps with another appointment
+                models.Q(start_time__lt=parsed_end_time, end_time__gt=parsed_start_time)
+            )
+            
+            if conflicting_appointments.exists():
+                conflicting_appointment = conflicting_appointments.first()
+                return Response({
+                    'status': 'error',
+                    'message': 'The selected time slot conflicts with another appointment',
+                    'conflict': {
+                        'appointment_id': conflicting_appointment.appointment_id,
+                        'start_time': conflicting_appointment.start_time.strftime('%H:%M'),
+                        'end_time': conflicting_appointment.end_time.strftime('%H:%M')
+                    }
+                }, status=status.HTTP_409_CONFLICT)
+            
+            # Check doctor availability for this day
+            day_of_week = parsed_date.strftime('%A')
+            try:
+                availability = DoctorAvailability.objects.get(
+                    doctor=doctor,
+                    day_of_week=day_of_week
+                )
+                
+                if not availability.is_available:
+                    return Response({
+                        'status': 'error',
+                        'message': f'Doctor is not available on {day_of_week}'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                if parsed_start_time < availability.start_time or parsed_end_time > availability.end_time:
+                    return Response({
+                        'status': 'error',
+                        'message': f'Selected time is outside doctor\'s availability hours ({availability.start_time} - {availability.end_time})'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except DoctorAvailability.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': f'No availability settings found for {day_of_week}'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Update the appointment
+            old_date = appointment.appointment_date
+            old_start_time = appointment.start_time
+            old_end_time = appointment.end_time
+            old_status = appointment.status
+            
+            appointment.appointment_date = parsed_date
+            appointment.start_time = parsed_start_time
+            appointment.end_time = parsed_end_time
+            appointment.status = status
+            appointment.save()
+            
+            # Add a note about the rescheduling
+            if appointment.admin_notes:
+                appointment.admin_notes += f"\n[{timezone.now().strftime('%Y-%m-%d %H:%M')}] Rescheduled from {old_date} {old_start_time}-{old_end_time} to {parsed_date} {parsed_start_time}-{parsed_end_time}. Previous status: {old_status}."
+            else:
+                appointment.admin_notes = f"[{timezone.now().strftime('%Y-%m-%d %H:%M')}] Rescheduled from {old_date} {old_start_time}-{old_end_time} to {parsed_date} {parsed_start_time}-{parsed_end_time}. Previous status: {old_status}."
+            
+            appointment.save(update_fields=['admin_notes'])
+            
+            return Response({
+                'status': 'success',
+                'message': 'Appointment rescheduled successfully',
+                'appointment': {
+                    'id': appointment.id,
+                    'appointment_id': appointment.appointment_id,
+                    'appointment_date': appointment.appointment_date,
+                    'start_time': appointment.start_time.strftime('%H:%M'),
+                    'end_time': appointment.end_time.strftime('%H:%M'),
+                    'status': appointment.status
+                }
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error rescheduling appointment: {str(e)}")
+            print(traceback.format_exc())
+            return Response({
+                'status': 'error',
+                'message': f'Error rescheduling appointment: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
