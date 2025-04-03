@@ -307,3 +307,106 @@ class Review(models.Model):
     
     def __str__(self):
         return f"Review for {self.doctor.full_name} from appointment {self.appointment.appointment_id}"
+
+# Add these new models to your doctors/models.py file
+
+class SupportTicket(models.Model):
+    STATUS_CHOICES = [
+        ('new', 'New'),
+        ('in_progress', 'In Progress'),
+        ('resolved', 'Resolved'),
+        ('closed', 'Closed'),
+    ]
+    
+    CATEGORY_CHOICES = [
+        ('technical', 'Technical Issue'),
+        ('billing', 'Billing Question'),
+        ('account', 'Account Management'),
+        ('appointment', 'Appointment Problem'),
+        ('feature', 'Feature Request'),
+        ('other', 'Other'),
+    ]
+    
+    USER_TYPE_CHOICES = [
+        ('doctor', 'Doctor'),
+        ('patient', 'Patient'),
+    ]
+    
+    ticket_id = models.CharField(max_length=10, unique=True, null=True, blank=True)
+    full_name = models.CharField(max_length=100)
+    email = models.EmailField()
+    subject = models.CharField(max_length=100, choices=CATEGORY_CHOICES)
+    message = models.TextField()
+    
+    # Optional fields
+    attachments = models.FileField(upload_to='support_attachments/', null=True, blank=True)
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='doctor')
+    doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True, related_name='support_tickets')
+    patient_id = models.IntegerField(null=True, blank=True)  # If submitted by a patient
+    
+    # Response tracking
+    response = models.TextField(null=True, blank=True)
+    agent_notes = models.TextField(null=True, blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ticket_id']),
+            models.Index(fields=['status']),
+            models.Index(fields=['doctor']),
+            models.Index(fields=['patient_id']),
+        ]
+    
+    def __str__(self):
+        return f"Ticket {self.ticket_id} - {self.get_subject_display()}"
+    
+    def save(self, *args, **kwargs):
+        # Generate ticket ID if it doesn't exist
+        if not self.ticket_id:
+            import random
+            import string
+            # Generate random ticket ID with format TM-XXXXX
+            chars = string.ascii_uppercase + string.digits
+            ticket_number = ''.join(random.choices(chars, k=5))
+            self.ticket_id = f"TM-{ticket_number}"
+            
+        super().save(*args, **kwargs)
+
+
+class FAQ(models.Model):
+    CATEGORY_CHOICES = [
+        ('general', 'General'),
+        ('appointments', 'Appointments'),
+        ('billing', 'Billing'),
+        ('account', 'Account'),
+        ('technical', 'Technical'),
+        ('privacy', 'Privacy & Security'),
+    ]
+    
+    question = models.CharField(max_length=255)
+    answer = models.TextField()
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    
+    # Display order
+    order = models.PositiveIntegerField(default=0)
+    is_published = models.BooleanField(default=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['order', 'category']
+        verbose_name = "FAQ"
+        verbose_name_plural = "FAQs"
+    
+    def __str__(self):
+        return self.question
