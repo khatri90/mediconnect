@@ -1652,3 +1652,155 @@ class AppointmentRescheduleView(APIView):
                 'status': 'error',
                 'message': f'Error rescheduling appointment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# Add these to your doctors/views.py file
+
+class SupportTicketAPIView(APIView):
+    """
+    API endpoint for creating and retrieving support tickets
+    """
+    parser_classes = (MultiPartParser, FormParser)
+    
+    def get(self, request, format=None):
+        """Get support tickets for a doctor or patient"""
+        # Check if authenticated as doctor
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({
+                'status': 'error',
+                'message': 'Authentication token required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+        token = auth_header.split(' ')[1]
+        doctor_id = verify_token(token)
+        
+        if doctor_id:
+            # Doctor is authenticated, return their tickets
+            tickets = SupportTicket.objects.filter(doctor_id=doctor_id)
+            serializer = SupportTicketSerializer(tickets, many=True)
+            return Response({
+                'status': 'success',
+                'tickets': serializer.data
+            })
+        else:
+            # Check if authenticated as patient
+            try:
+                # Decode the JWT token
+                payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                patient_id = payload.get('patient_id')
+                
+                if patient_id:
+                    tickets = SupportTicket.objects.filter(patient_id=patient_id)
+                    serializer = SupportTicketSerializer(tickets, many=True)
+                    return Response({
+                        'status': 'success',
+                        'tickets': serializer.data
+                    })
+                else:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Invalid or expired token'
+                    }, status=status.HTTP_401_UNAUTHORIZED)
+            except Exception as e:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid or expired token'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+    
+    def post(self, request, format=None):
+        """Create a new support ticket"""
+        # Check authentication
+        doctor_id = None
+        patient_id = None
+        user_type = 'doctor'  # Default
+        
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            # Check if doctor token
+            doctor_id = verify_token(token)
+            
+            if not doctor_id:
+                # Check if patient token
+                try:
+                    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                    patient_id = payload.get('patient_id')
+                    if patient_id:
+                        user_type = 'patient'
+                except Exception:
+                    pass
+        
+        # Create a copy of the request data to modify
+        data = request.data.copy()
+        
+        # Add user_type, doctor_id, or patient_id if authenticated
+        if doctor_id:
+            data['user_type'] = 'doctor'
+            data['doctor'] = doctor_id
+        elif patient_id:
+            data['user_type'] = 'patient'
+            data['patient_id'] = patient_id
+        
+        # Create ticket
+        serializer = SupportTicketCreateSerializer(data=data)
+        if serializer.is_valid():
+            ticket = serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'Support ticket created successfully',
+                'ticket_id': ticket.ticket_id
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid form data',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FAQAPIView(APIView):
+    """
+    API endpoint for retrieving FAQs
+    """
+    permission_classes = [permissions.AllowAny]  # Public access
+    
+    def get(self, request, format=None):
+        """Get published FAQs, optionally filtered by category"""
+        category = request.query_params.get('category')
+        
+        # Filter by published status and optionally by category
+        query = Q(is_published=True)
+        if category:
+            query &= Q(category=category)
+            
+        faqs = FAQ.objects.filter(query).order_by('order', 'category')
+        
+        # Group by category if requested
+        grouped = request.query_params.get('grouped', 'false').lower() == 'true'
+        
+        if grouped:
+            # Group FAQs by category
+            categories = {}
+            for faq in faqs:
+                category_name = faq.get_category_display()
+                if category_name not in categories:
+                    categories[category_name] = []
+                    
+                categories[category_name].append({
+                    'id': faq.id,
+                    'question': faq.question,
+                    'answer': faq.answer,
+                    'order': faq.order
+                })
+                
+            return Response({
+                'status': 'success',
+                'categories': categories
+            })
+        else:
+            # Return flat list of FAQs
+            serializer = FAQSerializer(faqs, many=True)
+            return Response({
+                'status': 'success',
+                'faqs': serializer.data
+            })            
