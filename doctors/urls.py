@@ -19,7 +19,9 @@ from .views import (
     DoctorDashboardStatsAPIView,
     DoctorRevenueChartAPIView,
     DoctorRecentAppointmentsAPIView,
-    ReviewAPIView
+    ReviewAPIView,
+    SupportTicketAPIView, 
+    FAQAPIView
 )
 
 urlpatterns = [
