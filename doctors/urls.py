@@ -48,4 +48,6 @@ urlpatterns = [
     # Add these to urlpatterns in doctors/urls.py
     path('reviews/', ReviewAPIView.as_view(), name='reviews'),
     path('reviews/<str:appointment_id>/', ReviewAPIView.as_view(), name='appointment-review'),
+    path('support/tickets/', SupportTicketAPIView.as_view(), name='support-tickets'),
+    path('support/faqs/', FAQAPIView.as_view(), name='faqs'),
 ]
