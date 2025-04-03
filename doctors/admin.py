@@ -214,3 +214,78 @@ class DoctorAvailabilitySettingsAdmin(admin.ModelAdmin):
     list_display = ['doctor', 'appointment_duration', 'buffer_time', 'booking_window']
     search_fields = ['doctor__first_name', 'doctor__last_name', 'doctor__email']
     readonly_fields = ['created_at', 'updated_at']
+
+@admin.register(SupportTicket)
+class SupportTicketAdmin(admin.ModelAdmin):
+    list_display = ['ticket_id', 'full_name', 'subject', 'status', 'user_type', 'created_at']
+    list_filter = ['status', 'subject', 'user_type', 'created_at']
+    search_fields = ['ticket_id', 'full_name', 'email', 'message']
+    readonly_fields = ['ticket_id', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Ticket Information', {
+            'fields': (
+                'ticket_id',
+                'subject',
+                'status',
+                'user_type',
+            )
+        }),
+        ('User Information', {
+            'fields': (
+                'full_name',
+                'email',
+                'doctor',
+                'patient_id',
+            )
+        }),
+        ('Message Details', {
+            'fields': (
+                'message',
+                'attachments',
+            )
+        }),
+        ('Response', {
+            'fields': (
+                'response',
+                'agent_notes',
+                'resolved_at',
+            )
+        }),
+        ('Metadata', {
+            'fields': (
+                ('created_at', 'updated_at'),
+            ),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def save_model(self, request, obj, form, change):
+        # Set resolved_at date when status changes to resolved
+        if 'status' in form.changed_data and obj.status == 'resolved' and not obj.resolved_at:
+            obj.resolved_at = timezone.now()
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(FAQ)
+class FAQAdmin(admin.ModelAdmin):
+    list_display = ['question', 'category', 'order', 'is_published']
+    list_filter = ['category', 'is_published']
+    search_fields = ['question', 'answer']
+    list_editable = ['order', 'is_published']
+    
+    fieldsets = (
+        (None, {
+            'fields': (
+                'question',
+                'answer',
+                'category',
+            )
+        }),
+        ('Display Options', {
+            'fields': (
+                'order',
+                'is_published',
+            )
+        }),
+    )
