@@ -1,10 +1,13 @@
 # doctors/serializers.py
 
 from rest_framework import serializers
-from .models import Doctor, DoctorDocument
+from .models import Doctor, DoctorDocument, Review
 from .models import DoctorAvailability, DoctorAvailabilitySettings
 from .models import Appointment
 from django.db import models
+
+
+
 
 class DoctorDocumentSerializer(serializers.ModelSerializer):
     class Meta:
@@ -29,6 +32,24 @@ class AppointmentSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'appointment_id', 'created_at', 'updated_at']
         
+class DoctorSerializer(serializers.ModelSerializer):
+    documents = DoctorDocumentSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Doctor
+        fields = '__all__'
+        read_only_fields = ['id', 'status', 'created_at', 'updated_at', 'average_rating', 'total_reviews']
+
+class ReviewSerializer(serializers.ModelSerializer):
+    doctor_name = serializers.CharField(source='doctor.full_name', read_only=True)
+    
+    class Meta:
+        model = Review
+        fields = ['id', 'appointment', 'doctor', 'doctor_name', 'patient_id', 'rating', 
+                 'review_text', 'created_at']
+        read_only_fields = ['id', 'created_at', 'doctor_name']
+
+                
 class AppointmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment

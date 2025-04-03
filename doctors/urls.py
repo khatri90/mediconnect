@@ -18,7 +18,8 @@ from .views import (
     # New dashboard views
     DoctorDashboardStatsAPIView,
     DoctorRevenueChartAPIView,
-    DoctorRecentAppointmentsAPIView
+    DoctorRecentAppointmentsAPIView,
+    ReviewAPIView
 )
 
 urlpatterns = [
@@ -43,4 +44,8 @@ urlpatterns = [
     path('doctors/dashboard/stats/', DoctorDashboardStatsAPIView.as_view(), name='doctor-dashboard-stats'),
     path('doctors/dashboard/revenue-chart/', DoctorRevenueChartAPIView.as_view(), name='doctor-revenue-chart'),
     path('doctors/dashboard/recent-appointments/', DoctorRecentAppointmentsAPIView.as_view(), name='doctor-recent-appointments'),
+    
+    # Add these to urlpatterns in doctors/urls.py
+    path('reviews/', ReviewAPIView.as_view(), name='reviews'),
+    path('reviews/<str:appointment_id>/', ReviewAPIView.as_view(), name='appointment-review'),
 ]

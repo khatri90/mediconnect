@@ -9,7 +9,9 @@ from django.contrib.auth.hashers import make_password
 from .models import Doctor, DoctorAccount, Appointment
 import logging
 from django.core.mail import send_mail
-
+from django.db.models.signals import post_save, post_delete
+from django.db.models import Avg
+from .models import Review
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,25 @@ def generate_random_password(length=10):
     random.shuffle(password_list)
     return ''.join(password_list)
 
-
+@receiver(post_save, sender=Review)
+@receiver(post_delete, sender=Review)
+def update_doctor_average_rating(sender, instance, **kwargs):
+    """Signal to update the doctor's average rating when reviews change"""
+    try:
+        doctor = instance.doctor
+        # Calculate the new average rating
+        avg_rating = Review.objects.filter(doctor=doctor).aggregate(Avg('rating'))['rating__avg']
+        total_reviews = Review.objects.filter(doctor=doctor).count()
+        
+        # Update the doctor's average rating
+        doctor.average_rating = avg_rating
+        doctor.total_reviews = total_reviews
+        doctor.save(update_fields=['average_rating', 'total_reviews'])
+        
+        logger.info(f"Updated average rating for doctor {doctor.full_name} to {avg_rating} from {total_reviews} reviews")
+    except Exception as e:
+        logger.error(f"Error updating average rating: {str(e)}")
+        
 def generate_hex_id(length=6):
     """Generate a random hexadecimal ID of specified length"""
     hex_chars = "0123456789ABCDEF"

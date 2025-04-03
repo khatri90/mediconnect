@@ -3,8 +3,8 @@ from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
-from .models import Doctor, DoctorDocument, DoctorAccount
-from .serializers import DoctorSerializer, DoctorRegistrationSerializer
+from .models import Doctor, DoctorDocument, DoctorAccount, Review
+from .serializers import DoctorSerializer, DoctorRegistrationSerializer, ReviewSerializer
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
 from django.conf import settings
@@ -21,7 +21,7 @@ from .serializers import (
 import json
 import traceback
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, Avg
 from .models import Appointment
 from .serializers import AppointmentSerializer, AppointmentCreateSerializer
 from django.contrib.auth.decorators import login_required
@@ -54,6 +54,148 @@ def verify_token(token):
         return None
     except jwt.InvalidTokenError:
         return None
+
+class ReviewAPIView(APIView):
+    """
+    API endpoint for patients to submit and view reviews
+    """
+    def get(self, request, format=None):
+        """Get reviews for a doctor or by a patient"""
+        doctor_id = request.query_params.get('doctor_id')
+        patient_id = request.query_params.get('patient_id')
+        appointment_id = request.query_params.get('appointment_id')
+        
+        if doctor_id:
+            # Get reviews for a specific doctor
+            reviews = Review.objects.filter(doctor_id=doctor_id)
+            
+            # Add average rating to response
+            try:
+                doctor = Doctor.objects.get(id=doctor_id)
+                average_rating = doctor.average_rating
+                total_reviews = doctor.total_reviews
+            except Doctor.DoesNotExist:
+                average_rating = None
+                total_reviews = 0
+                
+        elif patient_id:
+            # Get reviews submitted by a specific patient
+            reviews = Review.objects.filter(patient_id=patient_id)
+            average_rating = None
+            total_reviews = reviews.count()
+        elif appointment_id:
+            # Get review for a specific appointment
+            try:
+                reviews = [Review.objects.get(appointment__appointment_id=appointment_id)]
+                average_rating = None
+                total_reviews = 1
+            except Review.DoesNotExist:
+                reviews = []
+                average_rating = None
+                total_reviews = 0
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Either doctor_id, patient_id, or appointment_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        serializer = ReviewSerializer(reviews, many=True)
+        return Response({
+            'status': 'success',
+            'average_rating': average_rating,
+            'total_reviews': total_reviews,
+            'reviews': serializer.data
+        })
+        
+    def post(self, request, format=None):
+        """Submit a new review"""
+        # Get patient ID from token
+        patient_id = self._get_patient_id_from_token(request)
+        
+        if not patient_id:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid or missing authentication token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+        # Add patient_id to request data
+        data = request.data.copy()
+        data['patient_id'] = patient_id
+        
+        # Validate the appointment belongs to this patient
+        appointment_id = data.get('appointment')
+        try:
+            # Try to get by appointment_id (hex) first
+            if 'appointment_id' in data:
+                appointment = Appointment.objects.get(appointment_id=data['appointment_id'])
+                # Set the numeric ID for the serializer
+                data['appointment'] = appointment.id
+            else:
+                # Get by numeric ID
+                appointment = Appointment.objects.get(id=appointment_id)
+                
+            if appointment.patient_id != int(patient_id):
+                return Response({
+                    'status': 'error',
+                    'message': 'You can only review your own appointments'
+                }, status=status.HTTP_403_FORBIDDEN)
+                
+            # Check if the appointment is completed
+            if appointment.status != 'completed':
+                return Response({
+                    'status': 'error',
+                    'message': 'You can only review completed appointments'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Automatically set the doctor_id from the appointment
+            data['doctor'] = appointment.doctor.id
+            
+            # Check if a review already exists for this appointment
+            if Review.objects.filter(appointment=appointment).exists():
+                return Response({
+                    'status': 'error',
+                    'message': 'A review already exists for this appointment'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Appointment.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        # Create the review
+        serializer = ReviewSerializer(data=data)
+        if serializer.is_valid():
+            review = serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'Review submitted successfully',
+                'review': ReviewSerializer(review).data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid review data',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _get_patient_id_from_token(self, request):
+        """Extract patient ID from the authorization token"""
+        auth_header = request.headers.get('Authorization', '')
+        
+        if not auth_header.startswith('Bearer '):
+            return None
+            
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # Decode the JWT token
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            return payload.get('patient_id')
+        except Exception as e:
+            print(f"Error decoding token: {str(e)}")
+            return None
+
 class AppointmentCancelView(APIView):
     """
     API endpoint for canceling an appointment
@@ -114,6 +256,7 @@ class AppointmentCancelView(APIView):
                 'status': 'error',
                 'message': f'Error cancelling appointment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class AppointmentSlotAPIView(APIView):
     """
     API view to get available appointment slots for a doctor
@@ -294,7 +437,8 @@ class PatientAppointmentAPIView(APIView):
         # Create appointment
         serializer = AppointmentCreateSerializer(data=data)
         if serializer.is_valid():
-            appointment = serializer.save()
+            # Set status explicitly to 'confirmed'
+            appointment = serializer.save(status='confirmed')
             return Response({
                 'status': 'success',
                 'message': 'Appointment created successfully',
@@ -513,7 +657,9 @@ class DoctorLoginAPIView(APIView):
                 'specialty': doctor.specialty,
                 'email': doctor.email,
                 'location': f"{doctor.city}, {doctor.country}",
-                'profile_photo': profile_photo_url
+                'profile_photo': profile_photo_url,
+                'average_rating': doctor.average_rating,
+                'total_reviews': doctor.total_reviews
             }, status=status.HTTP_200_OK)
                 
         except Doctor.DoesNotExist:
@@ -654,7 +800,9 @@ class DoctorProfileAPIView(APIView):
                 'email': doctor.email,
                 'specialty': doctor.specialty,
                 'location': f"{doctor.city}, {doctor.country}",
-                'profile_photo': profile_photo_url
+                'profile_photo': profile_photo_url,
+                'average_rating': doctor.average_rating,
+                'total_reviews': doctor.total_reviews
             }, status=status.HTTP_200_OK)
             
         except Doctor.DoesNotExist:
@@ -981,8 +1129,9 @@ class ApprovedDoctorsAPIView(APIView):
                 'about_me': doctor.about_me,
                 'profile_photo': profile_photo_url,
                 'years_experience': doctor.years_experience,
-                'location': f"{doctor.city}, {doctor.country}"
-                
+                'location': f"{doctor.city}, {doctor.country}",
+                'average_rating': doctor.average_rating,
+                'total_reviews': doctor.total_reviews
             })
             
         return Response({
@@ -1073,6 +1222,7 @@ class DoctorWeeklyScheduleAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class DoctorDashboardStatsAPIView(APIView):
     """
     API endpoint to get dashboard statistics for a doctor
@@ -1118,12 +1268,19 @@ class DoctorDashboardStatsAPIView(APIView):
             
             total_revenue = revenue_data['total_revenue'] or 0
             
+            # Get doctor's rating information
+            doctor = Doctor.objects.get(id=doctor_id)
+            average_rating = doctor.average_rating
+            total_reviews = doctor.total_reviews
+            
             return Response({
                 'status': 'success',
                 'stats': {
                     'total_appointments': total_appointments,
                     'upcoming_appointments': upcoming_appointments,
-                    'total_revenue': float(total_revenue)
+                    'total_revenue': float(total_revenue),
+                    'average_rating': average_rating,
+                    'total_reviews': total_reviews
                 }
             })
             
@@ -1307,6 +1464,7 @@ class DoctorRecentAppointmentsAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class AppointmentRescheduleView(APIView):
     """
     API endpoint for rescheduling appointments
@@ -1320,7 +1478,7 @@ class AppointmentRescheduleView(APIView):
         appointment_date = request.data.get('appointment_date')
         start_time = request.data.get('start_time')
         end_time = request.data.get('end_time')
-        new_status = request.data.get('status', 'pending')  # Default to pending after rescheduling
+        new_status = request.data.get('status', 'confirmed')  # Default to confirmed after rescheduling
         
         # Validate required fields
         if not appointment_id or not appointment_date or not start_time or not end_time:

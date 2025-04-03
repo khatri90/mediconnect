@@ -102,6 +102,10 @@ class Doctor(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    # Review metrics
+    average_rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    total_reviews = models.IntegerField(default=0)
+    
     def __str__(self):
         return f"{self.title} {self.first_name} {self.last_name}"
     
@@ -252,7 +256,7 @@ class Appointment(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     
     # Status and metadata
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='confirmed')  # Changed from 'pending' to 'confirmed'
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -276,3 +280,30 @@ class Appointment(models.Model):
             models.Index(fields=['patient_id', 'status']),
             models.Index(fields=['appointment_date', 'start_time']),
         ]
+
+class Review(models.Model):
+    RATING_CHOICES = [
+        (1, '1 Star'),
+        (2, '2 Stars'),
+        (3, '3 Stars'),
+        (4, '4 Stars'),
+        (5, '5 Stars'),
+    ]
+    
+    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE, related_name='review')
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='reviews')
+    patient_id = models.IntegerField()  # ID from the patient database
+    rating = models.IntegerField(choices=RATING_CHOICES)
+    review_text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('appointment', 'doctor', 'patient_id')  # Ensure one review per appointment
+        indexes = [
+            models.Index(fields=['doctor', 'rating']),  # Index for calculating average rating
+            models.Index(fields=['patient_id']),  # Index for finding patient reviews
+        ]
+    
+    def __str__(self):
+        return f"Review for {self.doctor.full_name} from appointment {self.appointment.appointment_id}"

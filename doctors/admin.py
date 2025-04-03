@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib import messages
 from .models import Doctor, DoctorDocument, DoctorAccount, DoctorAvailability, DoctorAvailabilitySettings
 from .models import Appointment
+from .models import Review
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
@@ -48,6 +49,25 @@ class AppointmentAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ['appointment_id_display', 'doctor_name', 'patient_id', 'rating', 'created_at']
+    list_filter = ['rating', 'created_at']
+    search_fields = ['doctor__first_name', 'doctor__last_name', 'appointment__appointment_id', 'review_text']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    def appointment_id_display(self, obj):
+        """Display appointment ID in a more readable format"""
+        return obj.appointment.appointment_id if obj.appointment.appointment_id else f"#{obj.appointment.id}"
+    appointment_id_display.short_description = "Appointment"
+    
+    def doctor_name(self, obj):
+        """Display doctor's full name"""
+        return obj.doctor.full_name
+    doctor_name.short_description = "Doctor"
+    
+    
 class DoctorDocumentInline(admin.TabularInline):
     model = DoctorDocument
     extra = 0
@@ -78,7 +98,7 @@ class DoctorAvailabilitySettingsInline(admin.StackedInline):
     
 @admin.register(Doctor)
 class DoctorAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'email', 'specialty', 'status', 'created_at']
+    list_display = ['full_name', 'email', 'specialty', 'status', 'rating_display', 'created_at']
     list_filter = ['status', 'specialty', 'country']
     search_fields = ['first_name', 'last_name', 'email', 'license_number']
     readonly_fields = ['created_at', 'updated_at']
@@ -123,6 +143,13 @@ class DoctorAdmin(admin.ModelAdmin):
             )
         }),
     )
+    
+    def rating_display(self, obj):
+        """Display doctor's rating in a readable format"""
+        if obj.average_rating is None:
+            return "No ratings"
+        return f"{obj.average_rating:.1f} ★ ({obj.total_reviews})"
+    rating_display.short_description = "Rating"
     
     def save_model(self, request, obj, form, change):
         """Override save_model to check if a password was generated"""
