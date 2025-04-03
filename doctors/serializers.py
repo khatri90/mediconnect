@@ -292,3 +292,32 @@ class DoctorAvailabilityUpdateSerializer(serializers.Serializer):
         
         logger.debug(f"Final validation of data: {json.dumps(data)}")
         return data
+
+
+# Add these to your doctors/serializers.py file
+
+class SupportTicketSerializer(serializers.ModelSerializer):
+    doctor_name = serializers.CharField(source='doctor.full_name', read_only=True)
+    subject_display = serializers.CharField(source='get_subject_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = SupportTicket
+        fields = ['id', 'ticket_id', 'full_name', 'email', 'subject', 'subject_display', 
+                 'message', 'status', 'status_display', 'user_type', 'doctor', 
+                 'doctor_name', 'patient_id', 'response', 'created_at', 'updated_at', 'resolved_at']
+        read_only_fields = ['id', 'ticket_id', 'status', 'response', 'created_at', 'updated_at', 'resolved_at']
+
+
+class SupportTicketCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupportTicket
+        fields = ['full_name', 'email', 'subject', 'message', 'attachments', 'user_type', 'doctor', 'patient_id']
+        
+
+class FAQSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    
+    class Meta:
+        model = FAQ
+        fields = ['id', 'question', 'answer', 'category', 'category_display', 'order', 'is_published']
