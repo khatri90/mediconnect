@@ -144,7 +144,7 @@ class PatientProfileView(APIView):
     """
     def get(self, request, format=None):
         # Get token from authorization header
-        auth_header = request.headers.get('Authorization')
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
         
         if not auth_header or not auth_header.startswith('Bearer '):
             return Response({
