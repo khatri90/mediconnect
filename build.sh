@@ -288,6 +288,7 @@ CREATE TABLE IF NOT EXISTS patients_patient (
     gender VARCHAR(1) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_staff BOOLEAN NOT NULL DEFAULT FALSE,
+    is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
     date_joined TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     allergies TEXT,
     medical_conditions TEXT,
@@ -488,6 +489,40 @@ try:
     print('Patients tables SQL executed successfully')
 except Exception as e:
     print(f'Error executing SQL: {e}')
+finally:
+    cursor.close()
+    conn.close()
+"
+
+# Add is_superuser column to patients_patient table if it doesn't exist
+echo "Adding is_superuser column to patients_patient table if it doesn't exist..."
+python -c "
+import os
+import psycopg2
+
+# Connect to the database
+conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+conn.autocommit = True  # Set autocommit mode
+cursor = conn.cursor()
+
+# Check if column exists
+try:
+    cursor.execute(\"\"\"
+    SELECT column_name 
+    FROM information_schema.columns 
+    WHERE table_name='patients_patient' AND column_name='is_superuser';
+    \"\"\")
+    column_exists = cursor.fetchone()
+    
+    if not column_exists:
+        cursor.execute(\"\"\"
+        ALTER TABLE patients_patient ADD COLUMN is_superuser BOOLEAN NOT NULL DEFAULT FALSE;
+        \"\"\")
+        print('Column is_superuser added successfully to patients_patient table')
+    else:
+        print('Column is_superuser already exists in patients_patient table')
+except Exception as e:
+    print(f'Error checking/adding is_superuser column: {e}')
 finally:
     cursor.close()
     conn.close()
