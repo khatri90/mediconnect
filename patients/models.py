@@ -77,7 +77,7 @@ class Patient(AbstractBaseUser, PermissionsMixin):
         return self.email
     
     class Meta:
-        db_table = 'patients'
+        pass
 
 class PatientAccount(models.Model):
     """
