@@ -557,6 +557,7 @@ class DoctorRegistrationAPIView(APIView):
     """
     API view to handle doctor registration
     """
+    permission_classes = [permissions.AllowAny]  # Add this line explicitly 
     parser_classes = (MultiPartParser, FormParser)
     
     def post(self, request, format=None):
@@ -583,6 +584,7 @@ class DoctorRegistrationStatusAPIView(APIView):
     """
     API view to check the status of a doctor registration
     """
+    permission_classes = [permissions.AllowAny]
     def get(self, request, doctor_id, format=None):
         try:
             doctor = Doctor.objects.get(id=doctor_id)
@@ -601,6 +603,7 @@ class DoctorLoginAPIView(APIView):
     """
     API view to handle doctor login
     """
+    permission_classes = [permissions.AllowAny]
     def post(self, request, format=None):
         email = request.data.get('email')
         password = request.data.get('password')

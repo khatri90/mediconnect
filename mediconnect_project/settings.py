@@ -231,15 +231,15 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # REST Framework settings
-# REST_FRAMEWORK = {
-#     'DEFAULT_AUTHENTICATION_CLASSES': [
-#         'rest_framework.authentication.TokenAuthentication',
-#         # JWT authentication will be handled manually in views
-#     ],
-#     'DEFAULT_PERMISSION_CLASSES': [
-#         'rest_framework.permissions.IsAuthenticated',
-#     ],
-# }
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        # JWT authentication will be handled manually in views
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',  # Changed to AllowAny by default
+    ],
+}
 
 # Session settings - ensure they work properly with Render
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
