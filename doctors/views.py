@@ -1701,11 +1701,14 @@ class SupportTicketAPIView(APIView):
                         'status': 'error',
                         'message': 'Invalid or expired token'
                     }, status=status.HTTP_401_UNAUTHORIZED)
-            except Exception as e:
+             except Exception as e:
+                import traceback
+                print(f"Support ticket API error: {str(e)}")
+                print(traceback.format_exc())
                 return Response({
-                    'status': 'error',
-                    'message': 'Invalid or expired token'
-                }, status=status.HTTP_401_UNAUTHORIZED)
+                'status': 'error',
+                'message': 'Server error occurred'
+                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def post(self, request, format=None):
         """Create a new support ticket"""
