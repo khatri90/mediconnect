@@ -11,7 +11,6 @@ pip install -r requirements.txt
 # Install Pillow for image processing
 pip install Pillow
 
-
 # Debug database connection
 echo "Database connection check..."
 python -c "import os; import psycopg2; conn = psycopg2.connect(os.environ.get('DATABASE_URL')); print('Connection successful!'); conn.close()"
@@ -42,6 +41,75 @@ os.makedirs("media/patient_documents", exist_ok=True)
 os.makedirs("media/hospitals", exist_ok=True)
 img.save("media/doctor_documents/background.jpg")
 '
+
+# Create a content type registration script
+echo "Creating content type registration script..."
+cat > register_content_types.py << EOL
+import os
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mediconnect_project.settings')
+django.setup()
+
+from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+
+# Make sure all patient models are registered
+content_types = [
+    {'app_label': 'patients', 'model': 'patient'},
+    {'app_label': 'patients', 'model': 'patientaccount'},
+    {'app_label': 'patients', 'model': 'medicalrecord'},
+    {'app_label': 'patients', 'model': 'patientdocument'},
+]
+
+print("Registering content types for patients app...")
+for ct in content_types:
+    ContentType.objects.get_or_create(**ct)
+    print(f"Registered {ct['app_label']}.{ct['model']}")
+
+# Verify patient permissions in auth_permission table
+cursor = connection.cursor()
+sql = """
+INSERT INTO auth_permission (name, content_type_id, codename)
+SELECT 
+    'Can view patient', 
+    ct.id, 
+    'view_patient'
+FROM 
+    django_content_type ct
+WHERE 
+    ct.app_label = 'patients' AND ct.model = 'patient'
+AND NOT EXISTS (
+    SELECT 1 FROM auth_permission 
+    WHERE content_type_id = ct.id AND codename = 'view_patient'
+);
+"""
+cursor.execute(sql)
+print(f"Added missing permissions. Rows affected: {cursor.rowcount}")
+
+# Add other CRUD permissions
+for action in ['add', 'change', 'delete']:
+    action_sql = f"""
+    INSERT INTO auth_permission (name, content_type_id, codename)
+    SELECT 
+        'Can {action} patient', 
+        ct.id, 
+        '{action}_patient'
+    FROM 
+        django_content_type ct
+    WHERE 
+        ct.app_label = 'patients' AND ct.model = 'patient'
+    AND NOT EXISTS (
+        SELECT 1 FROM auth_permission 
+        WHERE content_type_id = ct.id AND codename = '{action}_patient'
+    );
+    """
+    cursor.execute(action_sql)
+    print(f"Added {action} permission. Rows affected: {cursor.rowcount}")
+
+cursor.close()
+
+print("Done! Content types and permissions have been properly registered.")
+EOL
 
 # Create SQL files for the original doctor app tables
 echo "Creating appointments table directly..."
@@ -453,6 +521,10 @@ finally:
 # Mark all migrations as applied without running them
 echo "Marking all migrations as applied without actually running them..."
 python manage.py migrate --fake
+
+# Run the content type registration script
+echo "Registering content types and permissions..."
+python register_content_types.py
 
 # Create admin user
 echo "Creating admin user..."

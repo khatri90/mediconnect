@@ -1,10 +1,16 @@
+# patients/urls.py - Updated version
+
 from django.urls import path, include
+from django.contrib import admin
 from rest_framework.routers import DefaultRouter
 from . import views
 
 # Create a router for ViewSets
 router = DefaultRouter()
 router.register(r'medical-records', views.PatientMedicalRecordViewSet, basename='medical-records')
+
+# Make sure admin URLs are properly included
+admin.autodiscover()
 
 urlpatterns = [
     # Authentication endpoints
