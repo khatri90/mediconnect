@@ -3,6 +3,7 @@ from django.contrib import messages
 from .models import Doctor, DoctorDocument, DoctorAccount, DoctorAvailability, DoctorAvailabilitySettings
 from .models import Appointment
 from .models import Review
+from .models import SupportTicket, FAQ
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
