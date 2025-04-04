@@ -1706,9 +1706,9 @@ class SupportTicketAPIView(APIView):
                 print(f"Support ticket API error: {str(e)}")
                 print(traceback.format_exc())
                 return Response({
-                'status': 'error',
-                'message': 'Server error occurred'
-                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    'status': 'error',
+                    'message': 'Server error occurred'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def post(self, request, format=None):
         """Create a new support ticket"""
@@ -1759,8 +1759,7 @@ class SupportTicketAPIView(APIView):
                 'message': 'Invalid form data',
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-
-
+            
 class FAQAPIView(APIView):
     """
     API endpoint for retrieving FAQs
