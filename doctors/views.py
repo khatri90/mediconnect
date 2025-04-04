@@ -1701,7 +1701,7 @@ class SupportTicketAPIView(APIView):
                         'status': 'error',
                         'message': 'Invalid or expired token'
                     }, status=status.HTTP_401_UNAUTHORIZED)
-             except Exception as e:
+            except Exception as e:
                 import traceback
                 print(f"Support ticket API error: {str(e)}")
                 print(traceback.format_exc())

@@ -47,7 +47,13 @@ def serve_default_image(request, path):
 urlpatterns = [
     path('', health_check, name='health_check'),
     path('admin/', admin.site.urls),
+    
+    # API Endpoints (now with doctors, patients, and hospitals)
     path('api/', include('doctors.urls')),
+    path('api/patients/', include('patients.urls')),
+    path('api/hospitals/', include('hospitals.urls')),
+    
+    # Media serving
     path('media/<path:path>', serve_default_image, name='serve_media'),
 ]
 
