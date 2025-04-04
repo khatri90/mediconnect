@@ -34,6 +34,7 @@ from django.db.models.functions import TruncMonth
 from .models import Doctor, Appointment, DoctorAccount
 from .models import FAQ, SupportTicket
 from .serializers import SupportTicketCreateSerializer
+from .serializers import SupportTicketSerializer
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DELTA = datetime.timedelta(days=7)
