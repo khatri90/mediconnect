@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from django.contrib.auth.hashers import make_password, check_password
 
@@ -24,28 +24,11 @@ class PatientManager(BaseUserManager):
         patient.save(using=self._db)
         return patient
 
-class Patient(AbstractBaseUser, PermissionsMixin):
+class Patient(AbstractBaseUser):
     """
     Custom Patient model that uses email as the unique identifier
     instead of username.
     """
-    # Override PermissionsMixin fields to avoid clashes with auth.User
-    groups = models.ManyToManyField(
-        'auth.Group',
-        verbose_name='groups',
-        blank=True,
-        help_text='The groups this patient belongs to.',
-        related_name='patient_set',
-        related_query_name='patient',
-    )
-    user_permissions = models.ManyToManyField(
-        'auth.Permission',
-        verbose_name='user permissions',
-        blank=True,
-        help_text='Specific permissions for this patient.',
-        related_name='patient_set',
-        related_query_name='patient',
-    )
     GENDER_CHOICES = (
         ('M', 'Male'),
         ('F', 'Female'),
@@ -60,6 +43,7 @@ class Patient(AbstractBaseUser, PermissionsMixin):
     
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)  # Added for admin access if needed
+    is_superuser = models.BooleanField(default=False)  # Added simple field to replace PermissionsMixin
     date_joined = models.DateTimeField(default=timezone.now)
     
     # For medical data
@@ -77,7 +61,19 @@ class Patient(AbstractBaseUser, PermissionsMixin):
         return self.email
     
     class Meta:
-        pass
+        db_table = 'patients_patient'  # Changed to match actual table name in database
+
+    def has_perm(self, perm, obj=None):
+        """
+        Simple permission check replacement
+        """
+        return self.is_superuser
+
+    def has_module_perms(self, app_label):
+        """
+        Simple permission check replacement
+        """
+        return self.is_superuser
 
 class PatientAccount(models.Model):
     """
