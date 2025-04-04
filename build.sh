@@ -340,48 +340,7 @@ VALUES ('doctors', 'manual_support_creation', NOW())
 ON CONFLICT DO NOTHING;
 
 -- Insert initial FAQ data
-INSERT INTO doctors_faq (question, answer, category, "order", is_published)
-VALUES
-    ('How do I reschedule an appointment?', 
-     'You can reschedule an appointment through the Appointments section of your dashboard. Simply locate the appointment you wish to reschedule, click the "Reschedule" button, and select a new available time slot.',
-     'appointments', 1, TRUE),
-     
-    ('How do I update my billing information?', 
-     'To update your billing information, go to your user profile and select the "Billing" tab. From there, you can add, remove, or update payment methods and view your billing history.',
-     'billing', 1, TRUE),
-     
-    ('Can I download my medical records?', 
-     'Yes, you can download your medical records from the Health Records section of your dashboard. Select the records you want to download and click the "Export" button. Files are available in PDF format.',
-     'general', 1, TRUE),
-     
-    ('How do I share my health data with my doctor?', 
-     'You can share your health data with your doctor by going to your profile and selecting "Share Profile." Enter your doctor''s email address or select them from your contacts list, then choose which data you want to share and for how long.',
-     'general', 2, TRUE),
-     
-    ('What should I do if I encounter a technical issue?', 
-     'If you encounter a technical issue, first try refreshing the page or logging out and back in. If the problem persists, please contact our technical support team through the Contact Support form, providing as much detail as possible about the issue.',
-     'technical', 1, TRUE),
-     
-    ('How can I change my password?', 
-     'To change your password, go to your profile settings and select "Change Password." You''ll need to enter your current password and then create a new one. For security, choose a strong password with a mix of letters, numbers, and special characters.',
-     'account', 1, TRUE),
-     
-    ('Can I use the platform on my mobile device?', 
-     'Yes, our platform is fully responsive and works on all mobile devices. You can also download our mobile app for iOS and Android for an optimized experience.',
-     'technical', 2, TRUE),
-     
-    ('How do I cancel an appointment?', 
-     'To cancel an appointment, go to the Appointments section of your dashboard, find the appointment you wish to cancel, and click the "Cancel" button. Please note that cancellations within 24 hours of the appointment may incur a fee.',
-     'appointments', 2, TRUE),
-     
-    ('What payment methods are accepted?', 
-     'We accept all major credit cards (Visa, MasterCard, American Express, Discover), PayPal, and bank transfers. Payment information is securely stored and processed.',
-     'billing', 2, TRUE),
-     
-    ('How is my data protected?', 
-     'We take data security seriously. All data is encrypted both in transit and at rest using industry-standard encryption. We comply with HIPAA regulations and employ strict access controls. You can review our full privacy policy for more details.',
-     'privacy', 1, TRUE)
-ON CONFLICT DO NOTHING;
+
 EOL
 
 # Execute the SQL file directly to create support tables
