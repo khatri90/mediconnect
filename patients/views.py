@@ -53,7 +53,6 @@ class PatientRegistrationView(APIView):
         
         if serializer.is_valid():
             # Create the patient
-            # Create the patient
             patient = serializer.save()
             # Store password for signal handler
             patient._password = serializer.validated_data['password']
@@ -181,7 +180,7 @@ class PatientProfileView(APIView):
     
     def put(self, request, format=None):
         # Get token from authorization header
-        auth_header = request.headers.get('Authorization')
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
         
         if not auth_header or not auth_header.startswith('Bearer '):
             return Response({
@@ -234,7 +233,7 @@ class PatientMedicalRecordViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Get token from authorization header
-        auth_header = self.request.headers.get('Authorization')
+        auth_header = self.request.META.get('HTTP_AUTHORIZATION')
         
         if not auth_header or not auth_header.startswith('Bearer '):
             return MedicalRecord.objects.none()
@@ -249,7 +248,7 @@ class PatientMedicalRecordViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         # Get token from authorization header
-        auth_header = self.request.headers.get('Authorization')
+        auth_header = self.request.META.get('HTTP_AUTHORIZATION')
         
         if not auth_header or not auth_header.startswith('Bearer '):
             raise permissions.PermissionDenied("Authentication token required")
@@ -274,7 +273,7 @@ class PatientDocumentView(APIView):
     
     def get(self, request, format=None):
         # Get token from authorization header
-        auth_header = request.headers.get('Authorization')
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
         
         if not auth_header or not auth_header.startswith('Bearer '):
             return Response({
@@ -314,7 +313,7 @@ class PatientDocumentView(APIView):
     
     def post(self, request, format=None):
         # Get token from authorization header
-        auth_header = request.headers.get('Authorization')
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
         
         if not auth_header or not auth_header.startswith('Bearer '):
             return Response({
