@@ -11,9 +11,6 @@ pip install -r requirements.txt
 # Install Pillow for image processing
 pip install Pillow
 
-# Fix indentation error in doctors/views.py
-echo "Fixing indentation in doctors/views.py..."
-sed -i -E 's/( *)except Exception as e:/    except Exception as e:/g' doctors/views.py
 
 # Debug database connection
 echo "Database connection check..."
