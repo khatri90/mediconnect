@@ -53,14 +53,10 @@ class PatientRegistrationView(APIView):
         
         if serializer.is_valid():
             # Create the patient
+            # Create the patient
             patient = serializer.save()
-            
-            # Create patient account
-            PatientAccount.objects.create(
-                patient=patient,
-                username=patient.email,
-                password_hash=serializer.validated_data['password']  # This would be hashed by the model
-            )
+            # Store password for signal handler
+            patient._password = serializer.validated_data['password']
             
             # Generate token
             token = generate_patient_token(patient.id)
