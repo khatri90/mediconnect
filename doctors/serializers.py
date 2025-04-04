@@ -5,6 +5,7 @@ from .models import Doctor, DoctorDocument, Review
 from .models import DoctorAvailability, DoctorAvailabilitySettings
 from .models import Appointment
 from django.db import models
+from .models import SupportTicket, FAQ 
 
 
 
