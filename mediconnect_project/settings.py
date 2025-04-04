@@ -75,11 +75,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',  # Added for token authentication
     'corsheaders',
     'whitenoise.runserver_nostatic',  # Added for static files on Render
-    
-    # Project apps
     'doctors',
-    'patients',  # New app for patient functionality
-    'hospitals',  # New app from Doctomoris
 ]
 
 MIDDLEWARE = [
@@ -195,16 +191,6 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': False,
         },
-        'patients': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'hospitals': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
     },
 }
 
@@ -229,17 +215,6 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
-# REST Framework settings
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-        # JWT authentication will be handled manually in views
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',  # Changed to AllowAny by default
-    ],
-}
 
 # Session settings - ensure they work properly with Render
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'

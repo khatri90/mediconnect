@@ -557,7 +557,6 @@ class DoctorRegistrationAPIView(APIView):
     """
     API view to handle doctor registration
     """
-    permission_classes = [permissions.AllowAny]  # Add this line explicitly 
     parser_classes = (MultiPartParser, FormParser)
     
     def post(self, request, format=None):
@@ -584,7 +583,6 @@ class DoctorRegistrationStatusAPIView(APIView):
     """
     API view to check the status of a doctor registration
     """
-    permission_classes = [permissions.AllowAny]
     def get(self, request, doctor_id, format=None):
         try:
             doctor = Doctor.objects.get(id=doctor_id)
@@ -603,7 +601,6 @@ class DoctorLoginAPIView(APIView):
     """
     API view to handle doctor login
     """
-    permission_classes = [permissions.AllowAny]
     def post(self, request, format=None):
         email = request.data.get('email')
         password = request.data.get('password')
@@ -1705,13 +1702,10 @@ class SupportTicketAPIView(APIView):
                         'message': 'Invalid or expired token'
                     }, status=status.HTTP_401_UNAUTHORIZED)
             except Exception as e:
-                import traceback
-                print(f"Support ticket API error: {str(e)}")
-                print(traceback.format_exc())
                 return Response({
                     'status': 'error',
-                    'message': 'Server error occurred'
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    'message': 'Invalid or expired token'
+                }, status=status.HTTP_401_UNAUTHORIZED)
     
     def post(self, request, format=None):
         """Create a new support ticket"""
@@ -1762,7 +1756,8 @@ class SupportTicketAPIView(APIView):
                 'message': 'Invalid form data',
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-            
+
+
 class FAQAPIView(APIView):
     """
     API endpoint for retrieving FAQs
