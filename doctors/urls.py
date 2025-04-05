@@ -21,7 +21,8 @@ from .views import (
     DoctorRecentAppointmentsAPIView,
     ReviewAPIView,
     SupportTicketAPIView, 
-    FAQAPIView
+    FAQAPIView,
+    DoctorPatientsAPIView
 )
 
 urlpatterns = [
