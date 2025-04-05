@@ -1808,6 +1808,8 @@ class FAQAPIView(APIView):
                 'faqs': serializer.data
             })            
 
+# Add this to your doctors/views.py file
+
 class DoctorPatientsAPIView(APIView):
     """
     API endpoint to get all unique patients for a doctor
@@ -1832,87 +1834,65 @@ class DoctorPatientsAPIView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
         
         try:
-            # Get all distinct patients who have appointments with this doctor
+            # Get all appointments for this doctor
             appointments = Appointment.objects.filter(doctor_id=doctor_id)
             
             # Get unique patient IDs
-            patient_ids = appointments.values_list('patient_id', flat=True).distinct()
-            
-            # Query patient info from user_accounts app using patient IDs
-            # Note: This assumes that patient_id corresponds to user_id in the User model
-            from django.db.models import Q
-            from user_accounts.models import User
-            
-            patients_data = []
+            patient_ids = list(appointments.values_list('patient_id', flat=True).distinct())
             
             # For each patient, gather their details and latest appointment
+            patients_data = []
             for patient_id in patient_ids:
-                try:
-                    user = User.objects.get(id=patient_id)
-                    
-                    # Get the latest appointment for this patient
-                    latest_appointment = Appointment.objects.filter(
-                        doctor_id=doctor_id,
-                        patient_id=patient_id
-                    ).order_by('-appointment_date', '-start_time').first()
-                    
-                    # Get all appointment dates for this patient
-                    all_appointments = Appointment.objects.filter(
-                        doctor_id=doctor_id,
-                        patient_id=patient_id
-                    )
-                    appointment_count = all_appointments.count()
-                    
-                    # Find the patient's latest status
-                    status = latest_appointment.status if latest_appointment else 'unknown'
-                    
-                    patients_data.append({
-                        'id': user.id,
-                        'patient_id': f"P-{user.id:06}",  # Format: P-000123
-                        'name': user.name,
-                        'email': user.email,
-                        'phone': user.phone_number,
-                        'gender': user.get_gender_display() if hasattr(user, 'get_gender_display') else user.gender,
-                        'dob': user.dob.strftime('%b %d, %Y') if user.dob else None,
-                        'latest_appointment': {
-                            'id': latest_appointment.id if latest_appointment else None,
-                            'appointment_id': latest_appointment.appointment_id if latest_appointment else None,
-                            'date': latest_appointment.appointment_date.strftime('%b %d, %Y') if latest_appointment else None,
-                            'time': latest_appointment.start_time.strftime('%I:%M %p') if latest_appointment else None,
-                            'reason': latest_appointment.problem_description if latest_appointment else None,
-                            'status': status
-                        },
-                        'appointment_count': appointment_count
-                    })
+                # Get the latest appointment for this patient
+                latest_appointment = Appointment.objects.filter(
+                    doctor_id=doctor_id,
+                    patient_id=patient_id
+                ).order_by('-appointment_date', '-start_time').first()
                 
-                except User.DoesNotExist:
-                    # Handle case where patient_id doesn't match any user
-                    # This could happen if patients are registered in a different system
-                    # Just use the information from the appointment
-                    appointment = latest_appointment if 'latest_appointment' in locals() else Appointment.objects.filter(
-                        doctor_id=doctor_id,
-                        patient_id=patient_id
-                    ).first()
-                    
-                    if appointment:
-                        patients_data.append({
-                            'id': patient_id,
-                            'patient_id': f"P-{patient_id:06}",
-                            'name': appointment.patient_name,
-                            'email': appointment.patient_email,
-                            'phone': appointment.patient_phone,
-                            'gender': 'Unknown',
-                            'dob': None,
-                            'latest_appointment': {
-                                'id': appointment.id,
-                                'appointment_id': appointment.appointment_id,
-                                'date': appointment.appointment_date.strftime('%b %d, %Y'),
-                                'time': appointment.start_time.strftime('%I:%M %p'),
-                                'reason': appointment.problem_description,
-                                'status': appointment.status
-                            },
-                            'appointment_count': appointment_count if 'appointment_count' in locals() else 1
-                        })
+                if not latest_appointment:
+                    continue
+                
+                # Get all appointments for this patient
+                all_appointments = Appointment.objects.filter(
+                    doctor_id=doctor_id,
+                    patient_id=patient_id
+                )
+                appointment_count = all_appointments.count()
+                
+                # Determine gender based on naming patterns (very basic approach)
+                # In a real app, you'd have this stored in your patient model
+                name = latest_appointment.patient_name
+                gender = 'Male'  # Default
+                
+                # Very simple gender detection
+                common_female_names = ['mary', 'patricia', 'jennifer', 'linda', 'elizabeth', 
+                                     'barbara', 'susan', 'jessica', 'sarah', 'karen', 'nancy', 
+                                     'margaret', 'lisa', 'betty', 'dorothy', 'sandra', 'ashley', 
+                                     'kimberly', 'donna', 'emily', 'michelle', 'carol', 'amanda', 
+                                     'melissa', 'deborah', 'stephanie', 'laura', 'olivia', 'emma']
+                
+                # Check first name against common female names
+                first_name = name.split(' ')[0].lower() if ' ' in name else name.lower()
+                if first_name in common_female_names:
+                    gender = 'Female'
+                
+                patients_data.append({
+                    'id': patient_id,
+                    'patient_id': f"P-{patient_id:06}",  # Format: P-000123
+                    'name': latest_appointment.patient_name,
+                    'email': latest_appointment.patient_email,
+                    'phone': latest_appointment.patient_phone,
+                    'gender': gender,
+                    'latest_appointment': {
+                        'id': latest_appointment.id,
+                        'appointment_id': latest_appointment.appointment_id,
+                        'date': latest_appointment.appointment_date.strftime('%b %d, %Y'),
+                        'time': latest_appointment.start_time.strftime('%I:%M %p'),
+                        'reason': latest_appointment.problem_description,
+                        'status': latest_appointment.status
+                    },
+                    'appointment_count': appointment_count
+                })
             
             return Response({
                 'status': 'success',
@@ -1927,5 +1907,4 @@ class DoctorPatientsAPIView(APIView):
             return Response({
                 'status': 'error',
                 'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)            
-
+            }, status=rest_framework.status.HTTP_500_INTERNAL_SERVER_ERROR)
