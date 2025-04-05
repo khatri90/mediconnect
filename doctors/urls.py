@@ -52,4 +52,6 @@ urlpatterns = [
     path('reviews/<str:appointment_id>/', ReviewAPIView.as_view(), name='appointment-review'),
     path('support/tickets/', SupportTicketAPIView.as_view(), name='support-tickets'),
     path('support/faqs/', FAQAPIView.as_view(), name='faqs'),
+    path('doctors/patients/', DoctorPatientsAPIView.as_view(), name='doctor-patients'),
+
 ]
