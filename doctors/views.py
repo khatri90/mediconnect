@@ -1226,10 +1226,8 @@ class DoctorWeeklyScheduleAPIView(APIView):
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# Modify the existing DoctorDashboardStatsAPIView to properly calculate revenue
 class DoctorDashboardStatsAPIView(APIView):
-    """
-    API endpoint to get dashboard statistics for a doctor
-    """
     def get(self, request, format=None):
         # Get doctor ID from token
         auth_header = request.headers.get('Authorization')
@@ -1263,12 +1261,15 @@ class DoctorDashboardStatsAPIView(APIView):
                 status__in=['pending', 'confirmed']
             ).count()
             
-            # Total revenue
+            # Calculate total revenue from all completed or confirmed appointments
             revenue_data = Appointment.objects.filter(
                 doctor_id=doctor_id,
-                status__in=['completed', 'confirmed']  # Only count revenue from completed/confirmed appointments
-            ).aggregate(total_revenue=Sum('amount'))
+                status__in=['completed', 'confirmed']
+            ).aggregate(
+                total_revenue=Sum('amount')
+            )
             
+            # Handle case where no revenue exists
             total_revenue = revenue_data['total_revenue'] or 0
             
             # Get doctor's rating information
@@ -1292,7 +1293,6 @@ class DoctorDashboardStatsAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class DoctorRevenueChartAPIView(APIView):
     """
