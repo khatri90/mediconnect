@@ -1925,7 +1925,7 @@ def patient_medical_history(request, patient_id):
                           status=status.HTTP_401_UNAUTHORIZED)
         
         # Configure the DoctoMoris API endpoint URL
-        DOCTOMORIS_API_BASE = "https://doctomoris-api.onrender.com/api"
+        DOCTOMORIS_API_BASE = "https://doctomoris.onrender.com/api/"
         
         # Make the request to DoctoMoris API
         # Note: We're sending the same token format that was sent to us
