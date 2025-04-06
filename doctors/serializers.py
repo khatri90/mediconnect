@@ -322,3 +322,41 @@ class FAQSerializer(serializers.ModelSerializer):
     class Meta:
         model = FAQ
         fields = ['id', 'question', 'answer', 'category', 'category_display', 'order', 'is_published']
+
+class MedicalDocumentSerializer(serializers.ModelSerializer):
+    """Serializer for patient medical documents"""
+    class Meta:
+        model = MedicalDocument
+        fields = [
+            'id', 
+            'title', 
+            'description', 
+            'document', 
+            'document_type', 
+            'uploaded_at'
+        ]
+        read_only_fields = ['uploaded_at']
+
+class MedicalHistorySerializer(serializers.ModelSerializer):
+    """Serializer for patient medical history"""
+    documents = MedicalDocumentSerializer(many=True, read_only=True)
+    patient_name = serializers.CharField(source='user.name', read_only=True)
+    patient_email = serializers.EmailField(source='user.email', read_only=True)
+    
+    class Meta:
+        model = MedicalHistory
+        fields = [
+            'id',
+            'patient_name',
+            'patient_email',
+            'allergies',
+            'chronic_diseases',
+            'surgeries',
+            'current_medications',
+            'family_medical_history',
+            'additional_notes',
+            'created_at',
+            'updated_at',
+            'documents'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
