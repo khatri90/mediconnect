@@ -54,5 +54,6 @@ urlpatterns = [
     path('support/tickets/', SupportTicketAPIView.as_view(), name='support-tickets'),
     path('support/faqs/', FAQAPIView.as_view(), name='faqs'),
     path('doctors/patients/', DoctorPatientsAPIView.as_view(), name='doctor-patients'),
+    path('patient-medical-history/<int:patient_id>/', views.patient_medical_history, name='patient-medical-history'),
 
 ]
