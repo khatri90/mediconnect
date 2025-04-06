@@ -1916,7 +1916,12 @@ class DoctorPatientsAPIView(APIView):
 
 @api_view(['GET'])
 def patient_medical_history(request, patient_id):
-    """Proxy endpoint to fetch medical history from DoctoMoris API"""
+    """Enhanced endpoint to fetch medical history with better diagnostics"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Received request for patient medical history: patient_id={patient_id}")
+    
     try:
         # Get the auth token from the request
         auth_header = request.headers.get('Authorization')
@@ -1924,12 +1929,64 @@ def patient_medical_history(request, patient_id):
             return Response({"status": "error", "message": "Authentication required"}, 
                           status=status.HTTP_401_UNAUTHORIZED)
         
+        # Prepare the response data structure
+        response_data = {
+            "status": "success",
+            "medical_history": None,
+            "documents": []
+        }
+        
+        # STEP 1: First check if we have data locally in our database
+        try:
+            from patient_records.models import MedicalHistory
+            # Try to get medical history directly from our database
+            logger.info(f"Checking for medical history in local database for user_id={patient_id}")
+            local_history = MedicalHistory.objects.filter(user_id=patient_id).first()
+            
+            if local_history:
+                logger.info(f"✓ Found medical history in local database for user_id={patient_id}")
+                # Use the data from our own database
+                response_data["medical_history"] = {
+                    "allergies": local_history.allergies,
+                    "chronic_diseases": local_history.chronic_diseases,
+                    "surgeries": local_history.surgeries,
+                    "current_medications": local_history.current_medications,
+                    "family_medical_history": local_history.family_medical_history,
+                    "additional_notes": local_history.additional_notes
+                }
+                
+                # Also get documents if available
+                if hasattr(local_history, 'documents'):
+                    documents = local_history.documents.all()
+                    logger.info(f"Found {documents.count()} documents for user_id={patient_id}")
+                    
+                    document_list = []
+                    for doc in documents:
+                        document_list.append({
+                            "id": doc.id,
+                            "title": doc.title,
+                            "document_type": doc.document_type,
+                            "document_url": request.build_absolute_uri(doc.document.url) if doc.document else None,
+                            "uploaded_at": doc.uploaded_at
+                        })
+                    
+                    response_data["documents"] = document_list
+                
+                # If we found local data, we can return it immediately
+                logger.info(f"Returning local medical history data for user_id={patient_id}")
+                return Response(response_data)
+            else:
+                logger.info(f"✗ No medical history found in local database for user_id={patient_id}")
+        except Exception as local_db_error:
+            logger.exception(f"Error checking local database: {str(local_db_error)}")
+        
+        # STEP 2: If we don't have local data, try the DoctoMoris API
+        logger.info(f"Attempting to fetch medical history from DoctoMoris API for patient_id={patient_id}")
+        
         # Configure the DoctoMoris API endpoint URL
-        DOCTOMORIS_API_BASE = "https://doctomoris.onrender.com/api/"
+        DOCTOMORIS_API_BASE = "https://doctomoris-api.onrender.com/api"
         
         # Make the request to DoctoMoris API
-        # Note: We're sending the same token format that was sent to us
-        # DoctoMoris API might need to accept Bearer tokens for this to work
         headers = {
             'Authorization': auth_header,
             'Content-Type': 'application/json'
@@ -1937,35 +1994,69 @@ def patient_medical_history(request, patient_id):
         
         # First, try to get medical history
         med_history_url = f"{DOCTOMORIS_API_BASE}/medical-history/{patient_id}/"
+        logger.info(f"Making request to DoctoMoris API: {med_history_url}")
+        
         med_history_response = requests.get(med_history_url, headers=headers)
+        logger.info(f"DoctoMoris medical history response status: {med_history_response.status_code}")
         
         # Then try to get documents
         documents_url = f"{DOCTOMORIS_API_BASE}/medical-documents/?patient_id={patient_id}"
+        logger.info(f"Making request to DoctoMoris API: {documents_url}")
+        
         documents_response = requests.get(documents_url, headers=headers)
+        logger.info(f"DoctoMoris documents response status: {documents_response.status_code}")
         
-        # Prepare the response
-        response_data = {
-            "status": "success",
-            "medical_history": None,
-            "documents": []
-        }
-        
-        # Add medical history if available
+        # Add medical history if available from DoctoMoris
         if med_history_response.status_code == 200:
-            response_data["medical_history"] = med_history_response.json()
+            try:
+                med_history_data = med_history_response.json()
+                logger.info(f"Successfully parsed medical history from DoctoMoris: {med_history_data}")
+                response_data["medical_history"] = med_history_data
+            except Exception as json_error:
+                logger.exception(f"Error parsing medical history JSON: {str(json_error)}")
+                logger.info(f"Raw response from DoctoMoris: {med_history_response.text[:500]}")  # Log first 500 chars
+        else:
+            logger.warning(f"Failed to get medical history from DoctoMoris: {med_history_response.status_code}")
+            try:
+                logger.warning(f"DoctoMoris error details: {med_history_response.text[:500]}")
+            except:
+                pass
         
-        # Add documents if available
+        # Add documents if available from DoctoMoris
         if documents_response.status_code == 200:
-            response_data["documents"] = documents_response.json()
+            try:
+                documents_data = documents_response.json()
+                logger.info(f"Successfully parsed {len(documents_data)} documents from DoctoMoris")
+                response_data["documents"] = documents_data
+            except Exception as json_error:
+                logger.exception(f"Error parsing documents JSON: {str(json_error)}")
+        else:
+            logger.warning(f"Failed to get documents from DoctoMoris: {documents_response.status_code}")
+        
+        # STEP 3: If we still don't have data, add some debug info to the response
+        if response_data["medical_history"] is None:
+            logger.warning(f"No medical history found for patient_id={patient_id} in either system")
+            # Add debug info to the response (will be removed in production)
+            if settings.DEBUG:
+                response_data["debug_info"] = {
+                    "checked_local_db": True,
+                    "local_db_result": "Not found",
+                    "checked_doctomoris": True,
+                    "doctomoris_status": med_history_response.status_code,
+                    "patient_id_used": patient_id,
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
         
         return Response(response_data)
     
     except requests.RequestException as e:
+        logger.exception(f"Network error connecting to DoctoMoris API: {str(e)}")
         return Response(
             {"status": "error", "message": f"Error connecting to DoctoMoris API: {str(e)}"},
             status=status.HTTP_503_SERVICE_UNAVAILABLE
         )
     except Exception as e:
+        logger.exception(f"Unexpected error in patient_medical_history view: {str(e)}")
         return Response(
             {"status": "error", "message": f"Internal server error: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
