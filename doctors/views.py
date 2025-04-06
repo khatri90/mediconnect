@@ -1984,7 +1984,7 @@ def patient_medical_history(request, patient_id):
         logger.info(f"Attempting to fetch medical history from DoctoMoris API for patient_id={patient_id}")
         
         # Configure the DoctoMoris API endpoint URL
-        DOCTOMORIS_API_BASE = "https://doctomoris-api.onrender.com/api"
+        DOCTOMORIS_API_BASE = "https://doctomoris.onrender.com/api/"
         
         # Make the request to DoctoMoris API
         headers = {
