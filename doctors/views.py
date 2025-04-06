@@ -36,6 +36,11 @@ from .models import FAQ, SupportTicket
 from .serializers import SupportTicketCreateSerializer
 from .serializers import SupportTicketSerializer
 from .serializers import FAQSerializer
+import requests
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DELTA = datetime.timedelta(days=7)
@@ -1908,3 +1913,60 @@ class DoctorPatientsAPIView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=rest_framework.status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+def patient_medical_history(request, patient_id):
+    """Proxy endpoint to fetch medical history from DoctoMoris API"""
+    try:
+        # Get the auth token from the request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({"status": "error", "message": "Authentication required"}, 
+                          status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Configure the DoctoMoris API endpoint URL
+        DOCTOMORIS_API_BASE = "https://doctomoris-api.onrender.com/api"
+        
+        # Make the request to DoctoMoris API
+        # Note: We're sending the same token format that was sent to us
+        # DoctoMoris API might need to accept Bearer tokens for this to work
+        headers = {
+            'Authorization': auth_header,
+            'Content-Type': 'application/json'
+        }
+        
+        # First, try to get medical history
+        med_history_url = f"{DOCTOMORIS_API_BASE}/medical-history/{patient_id}/"
+        med_history_response = requests.get(med_history_url, headers=headers)
+        
+        # Then try to get documents
+        documents_url = f"{DOCTOMORIS_API_BASE}/medical-documents/?patient_id={patient_id}"
+        documents_response = requests.get(documents_url, headers=headers)
+        
+        # Prepare the response
+        response_data = {
+            "status": "success",
+            "medical_history": None,
+            "documents": []
+        }
+        
+        # Add medical history if available
+        if med_history_response.status_code == 200:
+            response_data["medical_history"] = med_history_response.json()
+        
+        # Add documents if available
+        if documents_response.status_code == 200:
+            response_data["documents"] = documents_response.json()
+        
+        return Response(response_data)
+    
+    except requests.RequestException as e:
+        return Response(
+            {"status": "error", "message": f"Error connecting to DoctoMoris API: {str(e)}"},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+    except Exception as e:
+        return Response(
+            {"status": "error", "message": f"Internal server error: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
