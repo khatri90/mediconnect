@@ -2,17 +2,26 @@
 # exit on error
 set -o errexit
 
-# Install dependencies
+echo "Starting build process..."
+
+# Install dependencies with explicit package versions from requirements.txt
+echo "Installing dependencies..."
 pip install -r requirements.txt
 
+# Verify requests package is installed
+echo "Verifying requests package installation..."
+pip install requests>=2.31.0 PyJWT>=2.8.0
+
 # Install Pillow for image processing
+echo "Installing Pillow..."
 pip install Pillow
 
 # Debug database connection
 echo "Database connection check..."
-python -c "import os; import psycopg2; conn = psycopg2.connect(os.environ.get('DATABASE_URL')); print('Connection successful!'); conn.close()"
+python -c "import os; import psycopg2; print('Connecting to database...'); conn = psycopg2.connect(os.environ.get('DATABASE_URL')); print('Connection successful!'); conn.close()"
 
 # Create placeholder image directory
+echo "Creating placeholder directories..."
 mkdir -p staticfiles
 mkdir -p media/doctor_documents
 
@@ -114,23 +123,25 @@ import os
 import psycopg2
 
 # Connect to the database
-conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
-conn.autocommit = True  # Set autocommit mode
-cursor = conn.cursor()
-
-# Read the SQL file
-with open('create_appointment_table.sql', 'r') as f:
-    sql = f.read()
-
-# Execute the SQL
 try:
+    conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+    conn.autocommit = True  # Set autocommit mode
+    cursor = conn.cursor()
+
+    # Read the SQL file
+    with open('create_appointment_table.sql', 'r') as f:
+        sql = f.read()
+
+    # Execute the SQL
     cursor.execute(sql)
     print('Appointments SQL executed successfully')
 except Exception as e:
     print(f'Error executing SQL: {e}')
 finally:
-    cursor.close()
-    conn.close()
+    if 'conn' in locals() and conn:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        conn.close()
 "
 
 # Execute the SQL file directly to create reviews table
@@ -140,23 +151,25 @@ import os
 import psycopg2
 
 # Connect to the database
-conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
-conn.autocommit = True  # Set autocommit mode
-cursor = conn.cursor()
-
-# Read the SQL file
-with open('create_reviews_table.sql', 'r') as f:
-    sql = f.read()
-
-# Execute the SQL
 try:
+    conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+    conn.autocommit = True  # Set autocommit mode
+    cursor = conn.cursor()
+
+    # Read the SQL file
+    with open('create_reviews_table.sql', 'r') as f:
+        sql = f.read()
+
+    # Execute the SQL
     cursor.execute(sql)
     print('Reviews SQL executed successfully')
 except Exception as e:
     print(f'Error executing SQL: {e}')
 finally:
-    cursor.close()
-    conn.close()
+    if 'conn' in locals() and conn:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        conn.close()
 "
 
 # Mark all migrations as applied without running them
@@ -203,92 +216,83 @@ def generate_hex_id(length=6):
     return ''.join(random.choice(hex_chars) for _ in range(length))
 
 # Connect to the database
-conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
-conn.autocommit = True  # Set autocommit mode
-cursor = conn.cursor()
+try:
+    conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+    conn.autocommit = True  # Set autocommit mode
+    cursor = conn.cursor()
 
-# Check if column exists
-cursor.execute(\"\"\"
-SELECT column_name 
-FROM information_schema.columns 
-WHERE table_name='doctors_appointment' AND column_name='appointment_id';
-\"\"\")
-column_exists = cursor.fetchone()
+    # Check if column exists
+    cursor.execute(\"\"\"
+    SELECT column_name 
+    FROM information_schema.columns 
+    WHERE table_name='doctors_appointment' AND column_name='appointment_id';
+    \"\"\")
+    column_exists = cursor.fetchone()
 
-if not column_exists:
-    # Add the column with NULL allowed
-    try:
-        cursor.execute(\"\"\"
-        ALTER TABLE doctors_appointment 
-        ADD COLUMN appointment_id VARCHAR(6) UNIQUE;
-        \"\"\")
-        print('Column appointment_id added successfully')
-        
-        # Get all existing appointments
-        cursor.execute(\"\"\"
-        SELECT id FROM doctors_appointment;
-        \"\"\")
-        appointments = cursor.fetchall()
-        
-        # Generate and set unique IDs for each existing appointment
-        for appt_id in appointments:
-            # Try up to 10 times to generate a unique ID
-            for _ in range(10):
-                new_id = generate_hex_id()
-                # Check if this ID already exists
-                cursor.execute(\"\"\"
-                SELECT COUNT(*) FROM doctors_appointment 
-                WHERE appointment_id = %s;
-                \"\"\", (new_id,))
-                if cursor.fetchone()[0] == 0:
-                    # ID is unique, assign it to this appointment
+    if not column_exists:
+        # Add the column with NULL allowed
+        try:
+            cursor.execute(\"\"\"
+            ALTER TABLE doctors_appointment 
+            ADD COLUMN appointment_id VARCHAR(6) UNIQUE;
+            \"\"\")
+            print('Column appointment_id added successfully')
+            
+            # Get all existing appointments
+            cursor.execute(\"\"\"
+            SELECT id FROM doctors_appointment;
+            \"\"\")
+            appointments = cursor.fetchall()
+            
+            # Generate and set unique IDs for each existing appointment
+            for appt_id in appointments:
+                # Try up to 10 times to generate a unique ID
+                for _ in range(10):
+                    new_id = generate_hex_id()
+                    # Check if this ID already exists
+                    cursor.execute(\"\"\"
+                    SELECT COUNT(*) FROM doctors_appointment 
+                    WHERE appointment_id = %s;
+                    \"\"\", (new_id,))
+                    if cursor.fetchone()[0] == 0:
+                        # ID is unique, assign it to this appointment
+                        cursor.execute(\"\"\"
+                        UPDATE doctors_appointment 
+                        SET appointment_id = %s 
+                        WHERE id = %s;
+                        \"\"\", (new_id, appt_id[0]))
+                        print(f'Set appointment ID {new_id} for appointment {appt_id[0]}')
+                        break
+                else:
+                    # If we failed 10 times, use a timestamp-based approach
+                    timestamp = hex(int(time.time()))[2:]  # Convert timestamp to hex and remove '0x'
+                    new_id = f'{timestamp[-6:].upper()}{appt_id[0] % 10}'  # Use last 6 chars + record ID digit
                     cursor.execute(\"\"\"
                     UPDATE doctors_appointment 
                     SET appointment_id = %s 
                     WHERE id = %s;
                     \"\"\", (new_id, appt_id[0]))
-                    print(f'Set appointment ID {new_id} for appointment {appt_id[0]}')
-                    break
-            else:
-                # If we failed 10 times, use a timestamp-based approach
-                timestamp = hex(int(time.time()))[2:]  # Convert timestamp to hex and remove '0x'
-                new_id = f'{timestamp[-6:].upper()}{appt_id[0] % 10}'  # Use last 6 chars + record ID digit
-                cursor.execute(\"\"\"
-                UPDATE doctors_appointment 
-                SET appointment_id = %s 
-                WHERE id = %s;
-                \"\"\", (new_id, appt_id[0]))
-                print(f'Set timestamp-based ID {new_id} for appointment {appt_id[0]}')
-    except Exception as e:
-        print(f'Error working with appointment_id column: {e}')
-else:
-    # Column exists, modify it to allow NULL
-    try:
-        cursor.execute(\"\"\"
-        ALTER TABLE doctors_appointment 
-        ALTER COLUMN appointment_id DROP NOT NULL;
-        \"\"\")
-        print('Modified appointment_id column to allow NULL values')
-    except Exception as e:
-        print(f'Error modifying appointment_id column: {e}')
-
-cursor.close()
-conn.close()
+                    print(f'Set timestamp-based ID {new_id} for appointment {appt_id[0]}')
+        except Exception as e:
+            print(f'Error working with appointment_id column: {e}')
+    else:
+        # Column exists, modify it to allow NULL
+        try:
+            cursor.execute(\"\"\"
+            ALTER TABLE doctors_appointment 
+            ALTER COLUMN appointment_id DROP NOT NULL;
+            \"\"\")
+            print('Modified appointment_id column to allow NULL values')
+        except Exception as e:
+            print(f'Error modifying appointment_id column: {e}')
+except Exception as e:
+    print(f'Database connection error: {e}')
+finally:
+    if 'conn' in locals() and conn:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        conn.close()
 "
-
-# Skip the admin.py update since it's already properly updated in your codebase
-
-# Apply our specific migrations
-echo "Applying migrations..."
-python manage.py migrate --fake
-
-# Collect static files
-echo "Collecting static files..."
-python manage.py collectstatic --no-input
-
-echo "Build completed successfully."
-
-# Add these lines to your build.sh file, right after the part that creates the reviews table
 
 # Create a SQL file to directly create the support tables
 echo "Creating support tables directly..."
@@ -340,7 +344,6 @@ VALUES ('doctors', 'manual_support_creation', NOW())
 ON CONFLICT DO NOTHING;
 
 -- Insert initial FAQ data
-
 EOL
 
 # Execute the SQL file directly to create support tables
@@ -350,21 +353,33 @@ import os
 import psycopg2
 
 # Connect to the database
-conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
-conn.autocommit = True  # Set autocommit mode
-cursor = conn.cursor()
-
-# Read the SQL file
-with open('create_support_tables.sql', 'r') as f:
-    sql = f.read()
-
-# Execute the SQL
 try:
+    conn = psycopg2.connect(os.environ.get('DATABASE_URL'))
+    conn.autocommit = True  # Set autocommit mode
+    cursor = conn.cursor()
+
+    # Read the SQL file
+    with open('create_support_tables.sql', 'r') as f:
+        sql = f.read()
+
+    # Execute the SQL
     cursor.execute(sql)
     print('Support tables SQL executed successfully')
 except Exception as e:
     print(f'Error executing SQL: {e}')
 finally:
-    cursor.close()
-    conn.close()
+    if 'conn' in locals() and conn:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        conn.close()
 "
+
+# Apply our specific migrations
+echo "Applying migrations..."
+python manage.py migrate --fake
+
+# Collect static files
+echo "Collecting static files..."
+python manage.py collectstatic --no-input
+
+echo "Build completed successfully."
