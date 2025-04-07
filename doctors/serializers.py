@@ -43,12 +43,23 @@ class DoctorSerializer(serializers.ModelSerializer):
 
 class ReviewSerializer(serializers.ModelSerializer):
     doctor_name = serializers.CharField(source='doctor.full_name', read_only=True)
+    patient_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Review
-        fields = ['id', 'appointment', 'doctor', 'doctor_name', 'patient_id', 'rating', 
-                 'review_text', 'created_at']
-        read_only_fields = ['id', 'created_at', 'doctor_name']
+        fields = ['id', 'appointment', 'doctor', 'doctor_name', 'patient_id', 
+                 'patient_name', 'rating', 'review_text', 'created_at']
+        read_only_fields = ['id', 'created_at', 'doctor_name', 'patient_name']
+    
+    def get_patient_name(self, obj):
+        """Get patient name from the User model"""
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            user = User.objects.get(id=obj.patient_id)
+            return user.name
+        except User.DoesNotExist:
+            return f"Patient #{obj.patient_id}"
 
                 
 class AppointmentCreateSerializer(serializers.ModelSerializer):
