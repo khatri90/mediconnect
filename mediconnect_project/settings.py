@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'whitenoise.runserver_nostatic',  # Added for static files on Render
     'doctors',
+    'admin_portal'
 ]
 
 MIDDLEWARE = [
