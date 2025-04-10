@@ -133,10 +133,89 @@ class AdminDashboardStatsView(APIView):
     
     def get(self, request, format=None):
         try:
-            # Calculate various statistics
+            # Get all doctors and their stats
             total_doctors = Doctor.objects.count()
             pending_doctors = Doctor.objects.filter(status='pending').count()
-            total_appointments = Appointment.objects.count()
+            approved_doctors = Doctor.objects.filter(status='approved').count()
+            rejected_doctors = Doctor.objects.filter(status='rejected').count()
+            
+            # Get all subscription plans and their counts
+            subscription_data = {}
+            for plan in Doctor.SUBSCRIPTION_CHOICES:
+                plan_code, plan_name = plan
+                subscription_data[plan_code] = {
+                    'name': plan_name,
+                    'count': Doctor.objects.filter(subscription_plan=plan_code).count()
+                }
+            
+            # Calculate subscription revenue
+            # These would be your subscription prices, adjust as needed
+            subscription_prices = {
+                'basic': 29,       # $29/month
+                'professional': 49, # $49/month
+                'premium': 99      # $99/month
+            }
+            
+            # Calculate monthly subscription revenue
+            subscription_revenue = sum(
+                subscription_data[plan]['count'] * subscription_prices[plan]
+                for plan in subscription_prices
+                if plan in subscription_data
+            )
+            
+            # Get total users (patients) - using distinct patient_ids from appointments
+            patient_ids = Appointment.objects.values_list('patient_id', flat=True).distinct()
+            total_users = len(patient_ids)
+            
+            # Calculate appointment revenue
+            appointment_revenue_data = Appointment.objects.aggregate(
+                total_revenue=Sum('amount')
+            )
+            appointment_revenue = float(appointment_revenue_data['total_revenue'] or 0)
+            
+            # Total revenue = subscription revenue + appointment revenue
+            total_revenue = subscription_revenue + appointment_revenue
+            
+            # Get monthly revenue data for the chart (last 6 months)
+            today = timezone.now().date()
+            monthly_data = []
+            
+            for i in range(5, -1, -1):  # Last 6 months
+                # Calculate the first day of the month, i months ago
+                month_date = today.replace(day=1)
+                for _ in range(i):
+                    # Go back one month at a time to handle year boundaries correctly
+                    if month_date.month == 1:
+                        month_date = month_date.replace(year=month_date.year-1, month=12)
+                    else:
+                        month_date = month_date.replace(month=month_date.month-1)
+                
+                # Calculate the last day of the month
+                if month_date.month == 12:
+                    next_month = month_date.replace(year=month_date.year+1, month=1)
+                else:
+                    next_month = month_date.replace(month=month_date.month+1)
+                
+                last_day = (next_month - datetime.timedelta(days=1)).day
+                month_end = month_date.replace(day=last_day)
+                
+                # Get appointments revenue for this month
+                month_appointment_revenue = Appointment.objects.filter(
+                    appointment_date__gte=month_date,
+                    appointment_date__lte=month_end
+                ).aggregate(Sum('amount'))['amount__sum'] or 0
+                
+                # Estimate subscription revenue (this is simplified)
+                month_subscription_revenue = subscription_revenue
+                
+                monthly_data.append({
+                    'month': month_date.strftime('%b'),
+                    'subscription_revenue': float(month_subscription_revenue),
+                    'appointment_revenue': float(month_appointment_revenue),
+                    'total_revenue': float(month_subscription_revenue + month_appointment_revenue)
+                })
+            
+            # Count tickets
             total_tickets = SupportTicket.objects.count()
             open_tickets = SupportTicket.objects.filter(
                 status__in=['new', 'in_progress']
@@ -147,25 +226,38 @@ class AdminDashboardStatsView(APIView):
             total_reviews = reviews.count()
             average_rating = reviews.aggregate(avg=Avg('rating'))['avg'] or 0
             
-            # Serialize the statistics
+            # Serialize all the statistics
             stats = {
                 'total_doctors': total_doctors,
                 'pending_doctors': pending_doctors,
-                'total_appointments': total_appointments,
+                'approved_doctors': approved_doctors,
+                'rejected_doctors': rejected_doctors,
+                'doctor_verification': {
+                    'approved': approved_doctors,
+                    'pending': pending_doctors,
+                    'rejected': rejected_doctors
+                },
+                'total_users': total_users,
+                'active_subscriptions': total_doctors,
+                'subscription_revenue': subscription_revenue,
+                'appointment_revenue': appointment_revenue,
+                'total_revenue': total_revenue,
+                'revenue_chart_data': monthly_data,
                 'total_tickets': total_tickets,
                 'open_tickets': open_tickets,
                 'total_reviews': total_reviews,
-                'average_rating': round(average_rating, 2)
+                'average_rating': round(average_rating, 2),
+                'subscription_data': subscription_data
             }
-            
-            serializer = AdminDashboardStatsSerializer(stats)
             
             return Response({
                 'status': 'success',
-                'stats': serializer.data
+                'stats': stats
             })
             
         except Exception as e:
+            import traceback
+            print(traceback.format_exc())
             return Response({
                 'status': 'error',
                 'message': str(e)
