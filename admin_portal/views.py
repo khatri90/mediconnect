@@ -22,6 +22,7 @@ from .serializers import (
 import jwt
 import datetime
 from django.conf import settings
+from django.db.models import Sum, Count, Avg
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
