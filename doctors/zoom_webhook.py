@@ -8,6 +8,7 @@ from django.views.decorators.http import require_POST
 from django.conf import settings
 from .appointment_service import AppointmentService
 from .models import Appointment
+import hmac, hashlib
 
 logger = logging.getLogger(__name__)
 appointment_service = AppointmentService()
@@ -52,31 +53,14 @@ def zoom_webhook_handler(request):
     return HttpResponse("Method Not Allowed", status=405)
 
 def handle_validation_challenge(data):
-    """
-    Handle the Zoom webhook validation challenge
+    plain = data['payload']['plainToken']
+    secret = settings.ZOOM_WEBHOOK_SECRET_TOKEN.encode()
+    sig    = hmac.new(secret, plain.encode(), hashlib.sha256).hexdigest()
+    return JsonResponse({
+        "plainToken":     plain,
+        "encryptedToken": sig
+    })
     
-    When you set up a webhook endpoint, Zoom sends a validation request
-    with a challenge code that you need to hash and return
-    """
-    try:
-        # Extract challenge details
-        plain_token = data.get('payload', {}).get('plainToken')
-        
-        if not plain_token:
-            logger.error("Missing plainToken in validation payload")
-            return HttpResponse("Bad Request: Missing plain token", status=400)
-        
-        # Construct the response with the plain token
-        response_data = {
-            "plainToken": plain_token
-        }
-        
-        logger.info("Successfully responded to Zoom validation challenge")
-        return JsonResponse(response_data)
-        
-    except Exception as e:
-        logger.error(f"Error handling validation challenge: {str(e)}")
-        return HttpResponse("Internal Server Error", status=500)
 
 def process_webhook_event(request, data):
     """Process a regular webhook event notification"""
