@@ -30,6 +30,16 @@ class AppointmentAdmin(admin.ModelAdmin):
                 'patient_phone'
             )
         }),
+        ('Zoom Meeting', {  # Add this new fieldset
+            'fields': (
+                'zoom_meeting_id',
+                'zoom_meeting_url',
+                'zoom_meeting_password',
+                'zoom_meeting_status',
+                ('zoom_host_joined', 'zoom_client_joined'),
+                'zoom_meeting_duration'
+            )
+        }),
         ('Details', {
             'fields': (
                 'problem_description',
@@ -49,8 +59,7 @@ class AppointmentAdmin(admin.ModelAdmin):
             ),
             'classes': ('collapse',)
         }),
-    )
-    
+    )   
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
     list_display = ['appointment_id_display', 'doctor_name', 'patient_id', 'rating', 'created_at']
