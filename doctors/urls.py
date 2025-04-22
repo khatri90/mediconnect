@@ -24,7 +24,8 @@ from .views import (
     FAQAPIView,
     DoctorPatientsAPIView,
     patient_medical_history,
-    ZoomMeetingStatusAPIView
+    ZoomMeetingStatusAPIView,
+    test_webhook
 )
 
 urlpatterns = [
@@ -58,9 +59,11 @@ urlpatterns = [
     path('doctors/patients/', DoctorPatientsAPIView.as_view(), name='doctor-patients'),
     path('patient-medical-history/<int:patient_id>/', patient_medical_history, name='patient-medical-history'),
     
-    path('api/zoom/webhook/', zoom_webhook_handler, name='zoom-webhook'),
+    path('zoom/webhook/', zoom_webhook_handler, name='zoom-webhook'),
     
     path('meeting/status/', ZoomMeetingStatusAPIView.as_view(), name='meeting-status'),
+    
+    path('zoom/webhook/test/', test_webhook, name='test-webhook'),
     
     
 

@@ -8,6 +8,7 @@ from .serializers import DoctorSerializer, DoctorRegistrationSerializer, ReviewS
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
 from django.conf import settings
+from django.http import HttpResponse
 import jwt
 import datetime
 from datetime import datetime as dt  # Add this import for datetime.strptime
@@ -41,6 +42,10 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from .appointment_service import AppointmentService
+
+def test_webhook(request):
+    """Simple view to test webhook URL routing"""
+    return HttpResponse("Webhook URL is configured correctly", status=200)
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
