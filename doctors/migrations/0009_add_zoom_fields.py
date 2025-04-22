@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='appointment',
             name='zoom_meeting_id',
-            field=models.CharField(blank=True, max_length=100, null=True),
+            field=models.CharField(max_length=100, blank=True, null=True)
         ),
         migrations.AddField(
             model_name='appointment',
