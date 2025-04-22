@@ -12,7 +12,7 @@ from .models import Appointment
 logger = logging.getLogger(__name__)
 appointment_service = AppointmentService()
 
-@csrf_exempt
+@csrf_exempt  # This is important - keep this decorator
 def zoom_webhook_handler(request):
     """
     Handle Zoom webhook events and validation challenges
@@ -22,19 +22,19 @@ def zoom_webhook_handler(request):
     - meeting.ended
     - meeting.participant_joined
     - meeting.participant_left
-    
-    These events help us track meeting attendance and status
     """
-    # Handle the webhook validation challenge
-    if request.method == 'POST' and request.headers.get('content-type') == 'application/json':
+    # Make sure we accept POST requests
+    if request.method == 'POST':
         try:
+            # Parse JSON data
             data = json.loads(request.body)
+            logger.info(f"Received webhook data: {data.get('event', 'unknown event')}")
             
             # Check if this is a validation request
             if data.get('event') == 'endpoint.url_validation':
                 return handle_validation_challenge(data)
             
-            # Continue with normal webhook processing
+            # Process regular webhook event
             return process_webhook_event(request, data)
             
         except json.JSONDecodeError:
@@ -44,7 +44,11 @@ def zoom_webhook_handler(request):
             logger.error(f"Error processing webhook: {str(e)}")
             return HttpResponse("Internal Server Error", status=500)
     
-    # Handle unsupported methods
+    # Return a simple message for GET requests (for testing)
+    elif request.method == 'GET':
+        return HttpResponse("Zoom Webhook Endpoint is active", status=200)
+    
+    # Reject other methods
     return HttpResponse("Method Not Allowed", status=405)
 
 def handle_validation_challenge(data):

@@ -58,7 +58,7 @@ urlpatterns = [
     path('doctors/patients/', DoctorPatientsAPIView.as_view(), name='doctor-patients'),
     path('patient-medical-history/<int:patient_id>/', patient_medical_history, name='patient-medical-history'),
     
-    path('zoom/webhook/', zoom_webhook_handler, name='zoom-webhook'),
+    path('api/zoom/webhook/', zoom_webhook_handler, name='zoom-webhook'),
     
     path('meeting/status/', ZoomMeetingStatusAPIView.as_view(), name='meeting-status'),
     
