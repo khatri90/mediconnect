@@ -153,7 +153,7 @@ else:
             'ENGINE': 'django.db.backends.mysql',
             'NAME': 'mediconnect_db',  # Your database name
             'USER': 'root',  # Your MySQL username
-            'PASSWORD': 'Xz8$gT@4p!Qm92&LfK',  # Your MySQL password
+            'PASSWORD': 'root',  # Your MySQL password
             'HOST': 'localhost',
             'PORT': '3306',
         }
@@ -257,3 +257,9 @@ JWT_SECRET = SECRET_KEY
 # SECURE_SSL_REDIRECT = False
 # SESSION_COOKIE_SECURE = False
 # CSRF_COOKIE_SECURE = False
+
+# Zoom API Settings (OAuth)
+ZOOM_CLIENT_ID = os.environ.get('ZOOM_CLIENT_ID', '')
+ZOOM_CLIENT_SECRET = os.environ.get('ZOOM_CLIENT_SECRET', '')
+ZOOM_ACCOUNT_ID = os.environ.get('ZOOM_ACCOUNT_ID', '')  # Your Zoom account ID
+ZOOM_WEBHOOK_SECRET_TOKEN = os.environ.get('ZOOM_WEBHOOK_SECRET_TOKEN', '')

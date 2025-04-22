@@ -1,5 +1,5 @@
 # doctors/urls.py - Add these URL routes
-
+from .zoom_webhook import zoom_webhook_handler
 from django.urls import path
 from .views import (
     DoctorRegistrationAPIView, 
@@ -23,7 +23,8 @@ from .views import (
     SupportTicketAPIView, 
     FAQAPIView,
     DoctorPatientsAPIView,
-    patient_medical_history
+    patient_medical_history,
+    ZoomMeetingStatusAPIView
 )
 
 urlpatterns = [
@@ -56,5 +57,11 @@ urlpatterns = [
     path('support/faqs/', FAQAPIView.as_view(), name='faqs'),
     path('doctors/patients/', DoctorPatientsAPIView.as_view(), name='doctor-patients'),
     path('patient-medical-history/<int:patient_id>/', patient_medical_history, name='patient-medical-history'),
+    
+    path('zoom/webhook/', zoom_webhook_handler, name='zoom-webhook'),
+    
+    path('meeting/status/', ZoomMeetingStatusAPIView.as_view(), name='meeting-status'),
+    
+    
 
 ]

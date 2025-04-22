@@ -30,9 +30,16 @@ class AppointmentSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Appointment
-        fields = '__all__'
+        fields = [
+            'id', 'appointment_id', 'doctor', 'doctor_name', 'patient_id', 'patient_name', 
+            'patient_email', 'patient_phone', 'appointment_date', 'start_time', 'end_time', 
+            'package_type', 'problem_description', 'transaction_number', 'amount', 'status', 
+            'created_at', 'updated_at', 'doctor_notes', 'admin_notes',
+            'zoom_meeting_id', 'zoom_meeting_url', 'zoom_meeting_password', 'zoom_meeting_status',
+            'zoom_host_joined', 'zoom_client_joined', 'zoom_meeting_duration'
+        ]
         read_only_fields = ['id', 'appointment_id', 'created_at', 'updated_at']
-        
+             
 class DoctorSerializer(serializers.ModelSerializer):
     documents = DoctorDocumentSerializer(many=True, read_only=True)
     

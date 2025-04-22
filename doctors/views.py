@@ -40,10 +40,13 @@ import requests
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+from .appointment_service import AppointmentService
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DELTA = datetime.timedelta(days=7)
+
+appointment_service = AppointmentService()
 
 def generate_token(doctor_id):
     """Generate a JWT token for the doctor"""
@@ -422,7 +425,7 @@ class PatientAppointmentAPIView(APIView):
         })
         
     def post(self, request, format=None):
-        """Create a new appointment for a patient"""
+        """Create a new appointment for a patient with Zoom integration"""
         # Get patient ID and info from token
         patient_id = self._get_patient_id_from_token(request)
         patient_info = self._get_patient_info_from_token(request)
@@ -442,23 +445,35 @@ class PatientAppointmentAPIView(APIView):
             'patient_phone': patient_info.get('phone', '')
         })
         
-        # Create appointment
+        # Validate appointment data
         serializer = AppointmentCreateSerializer(data=data)
         if serializer.is_valid():
-            # Set status explicitly to 'confirmed'
-            appointment = serializer.save(status='confirmed')
-            return Response({
-                'status': 'success',
-                'message': 'Appointment created successfully',
-                'appointment': AppointmentSerializer(appointment).data
-            }, status=status.HTTP_201_CREATED)
+            try:
+                # Use the appointment service to create appointment with Zoom meeting
+                appointment = appointment_service.create_appointment(serializer.validated_data)
+                
+                return Response({
+                    'status': 'success',
+                    'message': 'Appointment created successfully',
+                    'appointment': AppointmentSerializer(appointment).data,
+                    'zoom_meeting': {
+                        'join_url': appointment.zoom_meeting_url,
+                        'password': appointment.zoom_meeting_password,
+                        'meeting_id': appointment.zoom_meeting_id
+                    }
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({
+                    'status': 'error',
+                    'message': f'Error creating appointment: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
             return Response({
                 'status': 'error',
                 'message': 'Invalid appointment data',
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-    
+               
     def _get_patient_id_from_token(self, request):
         """Extract patient ID from the authorization token"""
         auth_header = request.headers.get('Authorization', '')
@@ -1106,7 +1121,110 @@ class DoctorAvailabilityAPIView(APIView):
         except (ValueError, TypeError):
             # Return default time if parsing fails
             return time(9, 0)
-
+class ZoomMeetingStatusAPIView(APIView):
+    """
+    API endpoint to get Zoom meeting status for an appointment
+    """
+    def get(self, request, format=None):
+        """Get meeting status for an appointment"""
+        # Get appointment ID from query params
+        appointment_id = request.query_params.get('appointment_id')
+        
+        if not appointment_id:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Find the appointment
+            appointment = Appointment.objects.get(appointment_id=appointment_id)
+            
+            # Check if the appointment has a Zoom meeting
+            if not appointment.zoom_meeting_id:
+                return Response({
+                    'status': 'error',
+                    'message': 'No Zoom meeting associated with this appointment'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Format the response
+            meeting_status = {
+                'meeting_id': appointment.zoom_meeting_id,
+                'meeting_url': appointment.zoom_meeting_url,
+                'status': appointment.zoom_meeting_status,
+                'host_joined': appointment.zoom_host_joined,
+                'client_joined': appointment.zoom_client_joined,
+                'duration': appointment.zoom_meeting_duration
+            }
+            
+            return Response({
+                'status': 'success',
+                'meeting': meeting_status
+            })
+            
+        except Appointment.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Error getting meeting status: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+class ZoomMeetingStatusAPIView(APIView):
+    """
+    API endpoint to get Zoom meeting status for an appointment
+    """
+    def get(self, request, format=None):
+        """Get meeting status for an appointment"""
+        # Get appointment ID from query params
+        appointment_id = request.query_params.get('appointment_id')
+        
+        if not appointment_id:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Find the appointment
+            appointment = Appointment.objects.get(appointment_id=appointment_id)
+            
+            # Check if the appointment has a Zoom meeting
+            if not appointment.zoom_meeting_id:
+                return Response({
+                    'status': 'error',
+                    'message': 'No Zoom meeting associated with this appointment'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Format the response
+            meeting_status = {
+                'meeting_id': appointment.zoom_meeting_id,
+                'meeting_url': appointment.zoom_meeting_url,
+                'status': appointment.zoom_meeting_status,
+                'host_joined': appointment.zoom_host_joined,
+                'client_joined': appointment.zoom_client_joined,
+                'duration': appointment.zoom_meeting_duration
+            }
+            
+            return Response({
+                'status': 'success',
+                'meeting': meeting_status
+            })
+            
+        except Appointment.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Appointment not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Error getting meeting status: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
 class ApprovedDoctorsAPIView(APIView):
     """
     API view to list all approved doctors

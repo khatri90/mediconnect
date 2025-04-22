@@ -213,6 +213,27 @@ class DoctorAvailabilitySettings(models.Model):
 # Add the Appointment model after all the other models
 class Appointment(models.Model):
     
+    # Add these fields inside the Appointment class in doctors/models.py
+    zoom_meeting_id = models.CharField(max_length=100, blank=True, null=True)
+    zoom_meeting_url = models.URLField(max_length=500, blank=True, null=True)
+    zoom_meeting_password = models.CharField(max_length=50, blank=True, null=True)
+    zoom_meeting_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('scheduled', 'Scheduled'),
+            ('started', 'Started'),
+            ('completed', 'Completed'),
+            ('missed', 'Missed'),
+            ('failed', 'Failed'),
+        ],
+        default='scheduled',
+        blank=True,
+        null=True
+    )
+    zoom_host_joined = models.BooleanField(default=False)
+    zoom_client_joined = models.BooleanField(default=False)
+    zoom_meeting_duration = models.IntegerField(blank=True, null=True)  # Duration in minutes
+    
     appointment_id = models.CharField(
         max_length=6, 
         unique=True,
