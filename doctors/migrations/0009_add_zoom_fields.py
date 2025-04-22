@@ -1,18 +1,21 @@
 # doctors/migrations/0009_add_zoom_fields.py
+# Note: This migration initially had syntax errors (zoom_meeting_id = instead of field=)
+# It was manually fixed and fields were added directly to the database via SQL commands
+# This corrected version ensures future migrations build on the proper schema
 
 from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('doctors', '0008_faq_supportticket'),  # Update with your latest migration
+        ('doctors', '0008_faq_supportticket'),
     ]
 
     operations = [
         migrations.AddField(
             model_name='appointment',
             name='zoom_meeting_id',
-            field=models.CharField(max_length=100, blank=True, null=True)
+            field=models.CharField(max_length=100, blank=True, null=True),
         ),
         migrations.AddField(
             model_name='appointment',
