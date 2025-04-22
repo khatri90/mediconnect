@@ -78,66 +78,73 @@ class ZoomService:
     def create_meeting(self, topic, start_time, duration, doctor_email, patient_email=None):
         """
         Create a Zoom meeting and return meeting details
-        
-        Args:
-            topic (str): Meeting topic/title
-            start_time (datetime): Meeting start time (in UTC)
-            duration (int): Meeting duration in minutes
-            doctor_email (str): Email of the doctor (host)
-            patient_email (str, optional): Email of the patient
-            
-        Returns:
-            dict: Meeting details including meeting_id, join_url, password, etc.
         """
-        access_token = self.get_access_token()
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json'
-        }
-        
-        # Format start time for Zoom API (yyyy-MM-ddTHH:mm:ss)
-        formatted_start_time = start_time.strftime("%Y-%m-%dT%H:%M:%S")
-        
-        # Prepare meeting data
-        meeting_data = {
-            'topic': topic,
-            'type': 2,  # Scheduled meeting
-            'start_time': formatted_start_time,
-            'duration': duration,
-            'timezone': 'UTC',
-            'password': self.generate_password(),
-            'settings': {
-                'host_video': True,
-                'participant_video': True,
-                'join_before_host': False,
-                'mute_upon_entry': True,
-                'waiting_room': True,
-                'auto_recording': 'none',
-                'email_notification': True
-            }
-        }
-        
-        # Add alternative hosts if patient email is provided
-        if patient_email:
-            meeting_data['settings']['alternative_hosts'] = patient_email
-        
         try:
-            # Use the users/me/meetings endpoint to create a meeting
+            access_token = self.get_access_token()
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Format start time for Zoom API (yyyy-MM-ddTHH:mm:ss)
+            formatted_start_time = start_time.strftime("%Y-%m-%dT%H:%M:%S")
+            
+            # Generate password
+            password = self.generate_password()
+            
+            # Prepare meeting data with all original settings
+            meeting_data = {
+                'topic': topic,
+                'type': 2,  # Scheduled meeting
+                'start_time': formatted_start_time,
+                'duration': duration,
+                'timezone': 'UTC',
+                'password': password,
+                'settings': {
+                    'host_video': True,
+                    'participant_video': True,
+                    'join_before_host': False,
+                    'mute_upon_entry': True,
+                    'waiting_room': True,
+                    'auto_recording': 'none',
+                    'email_notification': True
+                }
+            }
+            
+            # Log the request data for debugging (before adding patient email)
+            logger.info(f"Creating Zoom meeting for topic: {topic}, time: {formatted_start_time}")
+            
+            # The key change: use requests.json parameter instead of manually serializing
             response = requests.post(
                 f"{self.base_url}/users/me/meetings",
                 headers=headers,
-                data=json.dumps(meeting_data)
+                json=meeting_data  # This is the main fix - use json parameter
             )
             
-            response.raise_for_status()  # Raise exception for non-200 status codes
+            logger.info(f"Zoom API response status: {response.status_code}")
+            
+            # If the response isn't successful, log the details
+            if response.status_code >= 400:
+                logger.error(f"Zoom API error response: {response.text}")
+            
+            response.raise_for_status()
             meeting_details = response.json()
             
             logger.info(f"Created Zoom meeting: {meeting_details['id']}")
             
+            # If you need to add the patient as an alternative host,
+            # do it in a separate API call after meeting creation
+            if patient_email and '@' in patient_email:
+                try:
+                    self.add_alternative_host(meeting_details['id'], patient_email)
+                except Exception as e:
+                    logger.warning(f"Could not add alternative host: {str(e)}")
+                    # Continue anyway as this is not critical
+            
             return {
                 'meeting_id': meeting_details['id'],
                 'join_url': meeting_details['join_url'],
-                'password': meeting_details.get('password', ''),
+                'password': meeting_details.get('password', password),  # Use our password as fallback
                 'start_url': meeting_details['start_url'],
                 'status': 'scheduled'
             }
@@ -145,9 +152,29 @@ class ZoomService:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating Zoom meeting: {str(e)}")
             if hasattr(e, 'response') and e.response:
-                logger.error(f"Zoom API response: {e.response.text}")
+                logger.error(f"Zoom API error details: {e.response.text}")
             raise
-    
+
+    def add_alternative_host(self, meeting_id, email):
+        """Add alternative host to an existing meeting"""
+        access_token = self.get_access_token()
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        data = {
+            'altenative_hosts': email
+        }
+        
+        response = requests.patch(
+            f"{self.base_url}/meetings/{meeting_id}",
+            headers=headers,
+            json=data
+        )
+        
+        response.raise_for_status()
+        return True    
     def get_meeting_details(self, meeting_id):
         """Get details for a specific Zoom meeting"""
         access_token = self.get_access_token()
