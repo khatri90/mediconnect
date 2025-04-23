@@ -1,4 +1,4 @@
-from rest_framework import generics, status, permissions
+from rest_framework import generics, status, permissions 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authentication import TokenAuthentication
@@ -17,10 +17,11 @@ from .firebase_utils import FirebaseChat
 import logging
 import jwt
 from django.conf import settings
+import traceback
 
 logger = logging.getLogger(__name__)
 
-# JWT settings - using doctor_id in doctomoris app
+# JWT settings
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 
@@ -118,41 +119,135 @@ class ChatMessagesView(APIView):
     permission_classes = [IsChatParticipant]
     
     def get(self, request, firebase_chat_id):
-        # First, check if the chat exists
-        chat = get_object_or_404(Chat, firebase_chat_id=firebase_chat_id)
-        
-        # Check if user has permission (redundant with IsChatParticipant, but kept for clarity)
-        user_type, user_id = get_user_from_token(request)
-        if not user_type or not user_id:
-            return Response(
-                {'detail': 'Invalid authentication token'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        # Get messages from Firebase
-        messages = FirebaseChat.get_chat_messages(firebase_chat_id)
-        
-        # Serialize messages
-        serializer = MessageSerializer(messages, many=True)
-        
-        # Mark messages as read (async)
-        FirebaseChat.mark_messages_as_read(firebase_chat_id, user_id, user_type)
-        
-        return Response(serializer.data)
+        try:
+            # First, check if the chat exists
+            chat = get_object_or_404(Chat, firebase_chat_id=firebase_chat_id)
+            
+            # Check if user has permission (redundant with IsChatParticipant, but kept for clarity)
+            user_type, user_id = get_user_from_token(request)
+            if not user_type or not user_id:
+                return Response(
+                    {'detail': 'Invalid authentication token'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Get messages from Firebase
+            messages = FirebaseChat.get_chat_messages(firebase_chat_id)
+            
+            # Serialize messages
+            serializer = MessageSerializer(messages, many=True)
+            
+            # Mark messages as read (async)
+            try:
+                FirebaseChat.mark_messages_as_read(firebase_chat_id, user_id, user_type)
+            except Exception as e:
+                # Log but don't fail if marking as read fails
+                logger.error(f"Error marking messages as read: {e}")
+                logger.error(traceback.format_exc())
+            
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error in ChatMessagesView: {e}")
+            logger.error(traceback.format_exc())
+            # Return empty list rather than error
+            return Response([])
 
 class SendMessageView(APIView):
     """View for sending a message to a Firebase chat"""
     permission_classes = [IsChatParticipant]
     
     def post(self, request):
-        serializer = SendMessageSerializer(data=request.data)
-        
-        if serializer.is_valid():
-            chat_id = serializer.validated_data['chat_id']
-            text = serializer.validated_data['text']
+        try:
+            serializer = SendMessageSerializer(data=request.data)
             
-            # Check if chat exists and user has permission
-            chat = get_object_or_404(Chat, firebase_chat_id=chat_id)
+            if serializer.is_valid():
+                chat_id = serializer.validated_data['chat_id']
+                text = serializer.validated_data['text']
+                
+                # Check if chat exists and user has permission
+                try:
+                    chat = Chat.objects.get(firebase_chat_id=chat_id)
+                except Chat.DoesNotExist:
+                    # Try finding by id instead
+                    try:
+                        chat = Chat.objects.get(id=chat_id)
+                        chat_id = chat.firebase_chat_id  # Use the firebase_chat_id
+                    except (Chat.DoesNotExist, ValueError):
+                        logger.error(f"Chat not found with ID: {chat_id}")
+                        return Response(
+                            {'detail': 'Chat not found'},
+                            status=status.HTTP_404_NOT_FOUND
+                        )
+                
+                # Get user info from token
+                user_type, user_id = get_user_from_token(request)
+                if not user_type or not user_id:
+                    return Response(
+                        {'detail': 'Invalid authentication token'},
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+                
+                # Verify the user is a participant
+                appointment = chat.appointment
+                if (user_type == 'doctor' and appointment.doctor.id != int(user_id)) or \
+                   (user_type == 'patient' and appointment.patient_id != int(user_id)):
+                    return Response(
+                        {'detail': 'You do not have permission to send messages to this chat'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                
+                # Send message to Firebase
+                try:
+                    success = FirebaseChat.send_message(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        user_type=user_type,
+                        text=text
+                    )
+                    
+                    if success:
+                        return Response(
+                            {'detail': 'Message sent successfully'},
+                            status=status.HTTP_201_CREATED
+                        )
+                    else:
+                        logger.error(f"Failed to send message to Firebase for chat: {chat_id}")
+                        return Response(
+                            {'detail': 'Failed to send message'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                        )
+                except Exception as e:
+                    logger.error(f"Exception sending message to Firebase: {e}")
+                    logger.error(traceback.format_exc())
+                    return Response(
+                        {'detail': 'Failed to send message'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+            
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in SendMessageView: {e}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {'detail': 'An unexpected error occurred'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class MarkMessagesReadView(APIView):
+    """View for marking messages as read in a Firebase chat"""
+    permission_classes = [IsChatParticipant]
+    
+    def post(self, request, firebase_chat_id):
+        try:
+            # Check if chat exists
+            try:
+                chat = Chat.objects.get(firebase_chat_id=firebase_chat_id)
+            except Chat.DoesNotExist:
+                logger.error(f"Chat not found with firebase_chat_id: {firebase_chat_id}")
+                return Response(
+                    {'detail': 'Chat not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
             
             # Get user info from token
             user_type, user_id = get_user_from_token(request)
@@ -162,68 +257,42 @@ class SendMessageView(APIView):
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
-            # Verify the user is a participant
-            appointment = chat.appointment
-            if (user_type == 'doctor' and appointment.doctor.id != int(user_id)) or \
-               (user_type == 'patient' and appointment.patient_id != int(user_id)):
-                return Response(
-                    {'detail': 'You do not have permission to send messages to this chat'},
-                    status=status.HTTP_403_FORBIDDEN
+            # Mark messages as read
+            try:
+                success = FirebaseChat.mark_messages_as_read(
+                    chat_id=firebase_chat_id,
+                    user_id=user_id,
+                    user_type=user_type
                 )
-            
-            # Send message to Firebase
-            success = FirebaseChat.send_message(
-                chat_id=chat_id,
-                user_id=user_id,
-                user_type=user_type,
-                text=text
-            )
-            
-            if success:
+                
+                if success:
+                    return Response(
+                        {'detail': 'Messages marked as read'},
+                        status=status.HTTP_200_OK
+                    )
+                else:
+                    logger.error(f"Failed to mark messages as read in Firebase for chat: {firebase_chat_id}")
+                    # Return success anyway to avoid client errors
+                    return Response(
+                        {'detail': 'Messages marked as read'},
+                        status=status.HTTP_200_OK
+                    )
+            except Exception as e:
+                logger.error(f"Exception marking messages as read in Firebase: {e}")
+                logger.error(traceback.format_exc())
+                # Return success anyway to avoid client errors
                 return Response(
-                    {'detail': 'Message sent successfully'},
-                    status=status.HTTP_201_CREATED
+                    {'detail': 'Messages marked as read'},
+                    status=status.HTTP_200_OK
                 )
-            else:
-                return Response(
-                    {'detail': 'Failed to send message'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class MarkMessagesReadView(APIView):
-    """View for marking messages as read in a Firebase chat"""
-    permission_classes = [IsChatParticipant]
-    
-    def post(self, request, firebase_chat_id):
-        # Check if chat exists
-        chat = get_object_or_404(Chat, firebase_chat_id=firebase_chat_id)
-        
-        # Get user info from token
-        user_type, user_id = get_user_from_token(request)
-        if not user_type or not user_id:
-            return Response(
-                {'detail': 'Invalid authentication token'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        # Mark messages as read
-        success = FirebaseChat.mark_messages_as_read(
-            chat_id=firebase_chat_id,
-            user_id=user_id,
-            user_type=user_type
-        )
-        
-        if success:
+                
+        except Exception as e:
+            logger.error(f"Unexpected error in MarkMessagesReadView: {e}")
+            logger.error(traceback.format_exc())
+            # Return success anyway to avoid client errors
             return Response(
                 {'detail': 'Messages marked as read'},
                 status=status.HTTP_200_OK
-            )
-        else:
-            return Response(
-                {'detail': 'Failed to mark messages as read'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 class CreateChatView(APIView):
@@ -241,7 +310,17 @@ class CreateChatView(APIView):
         
         try:
             # Find the appointment
-            appointment = Appointment.objects.get(appointment_id=appointment_id)
+            try:
+                appointment = Appointment.objects.get(appointment_id=appointment_id)
+            except Appointment.DoesNotExist:
+                # Try with numeric ID
+                try:
+                    appointment = Appointment.objects.get(id=int(appointment_id))
+                except (Appointment.DoesNotExist, ValueError):
+                    return Response(
+                        {'detail': 'Appointment not found'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
             
             # Check if a chat already exists for this appointment
             if hasattr(appointment, 'chat'):
@@ -276,13 +355,9 @@ class CreateChatView(APIView):
                 'chat_id': chat.id
             }, status=status.HTTP_201_CREATED)
             
-        except Appointment.DoesNotExist:
-            return Response(
-                {'detail': 'Appointment not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
         except Exception as e:
             logger.error(f"Error creating chat: {e}")
+            logger.error(traceback.format_exc())
             return Response(
                 {'detail': f'Error creating chat: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

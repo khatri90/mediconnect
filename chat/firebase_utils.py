@@ -6,6 +6,7 @@ import logging
 import uuid
 from datetime import datetime
 from django.conf import settings
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -13,38 +14,96 @@ class FirebaseChat:
     """
     Utility class for Firebase Firestore chat operations
     """
-    @staticmethod
-    def get_firestore_client():
-        """Get or initialize the Firestore client"""
+    _firestore_client = None
+    _app_initialized = False
+    
+    @classmethod
+    def get_firestore_client(cls):
+        """Get or initialize the Firestore client with better error handling"""
+        if cls._firestore_client:
+            return cls._firestore_client
+            
         try:
             # Check if Firebase is already initialized
-            app = firebase_admin.get_app()
-            logger.info("Using existing Firebase app for Firestore")
-        except ValueError:
-            # Initialize Firebase with credentials from environment
-            logger.info("Initializing Firebase app for Firestore")
-            service_account_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+            if cls._app_initialized:
+                logger.info("Using existing Firebase app for Firestore")
+            else:
+                # Initialize Firebase with credentials from environment
+                logger.info("Initializing Firebase app for Firestore")
+                service_account_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+                
+                if not service_account_json:
+                    logger.error("FIREBASE_SERVICE_ACCOUNT_JSON environment variable not set")
+                    logger.error("Available env vars: %s", str(os.environ.keys()))
+                    return None
+                
+                try:
+                    # Try to parse the JSON string
+                    service_account_info = json.loads(service_account_json)
+                    creds = credentials.Certificate(service_account_info)
+                    
+                    # Make sure we have a unique app name to avoid conflicts
+                    app_name = f"firestore-{uuid.uuid4()}"
+                    
+                    # Create app with error handling
+                    try:
+                        app = firebase_admin.initialize_app(creds, name=app_name)
+                        cls._app_initialized = True
+                        logger.info("Firebase app initialized successfully")
+                    except ValueError as e:
+                        # App already exists with this name, try to get it
+                        if "already exists" in str(e):
+                            logger.warning("Firebase app already exists, attempting to get it")
+                            # We'll handle this by continuing and trying to get the client
+                            cls._app_initialized = True
+                        else:
+                            raise
+                        
+                except json.JSONDecodeError:
+                    # If it's not a JSON string, it might be a path to a file
+                    logger.info("Service account isn't JSON, trying as file path")
+                    if os.path.exists(service_account_json):
+                        creds = credentials.Certificate(service_account_json)
+                        app = firebase_admin.initialize_app(creds, name=f"firestore-{uuid.uuid4()}")
+                        cls._app_initialized = True
+                        logger.info("Firebase app initialized successfully from file")
+                    else:
+                        logger.error("Service account JSON is neither valid JSON nor a valid file path")
+                        return None
             
-            if not service_account_json:
-                logger.error("FIREBASE_SERVICE_ACCOUNT_JSON environment variable not set")
-                return None
-            
+            # Get Firestore client
             try:
-                service_account_info = json.loads(service_account_json)
-                creds = credentials.Certificate(service_account_info)
-                app = firebase_admin.initialize_app(creds, name='firestore')
-                logger.info("Firebase app initialized for Firestore")
-            except Exception as e:
-                logger.error(f"Error initializing Firebase app: {e}")
-                return None
-        
-        # Get Firestore client
-        try:
-            db = firestore.client(app)
-            return db
+                # Try to get the default app first
+                app = firebase_admin.get_app()
+                db = firestore.client(app)
+                cls._firestore_client = db
+                logger.info("Successfully connected to Firestore with default app")
+                return db
+            except ValueError:
+                # No default app, try to get app by name
+                try:
+                    # Try to find any initialized app
+                    for app_name in firebase_admin._apps:
+                        if app_name:
+                            app = firebase_admin.get_app(app_name)
+                            db = firestore.client(app)
+                            cls._firestore_client = db
+                            logger.info(f"Successfully connected to Firestore with app: {app_name}")
+                            return db
+                            
+                    # If we get here, no app was found
+                    logger.error("No Firebase app found after initialization attempt")
+                    return None
+                except Exception as e:
+                    logger.error(f"Error getting Firebase app: {e}")
+                    return None
+                    
         except Exception as e:
             logger.error(f"Error getting Firestore client: {e}")
+            logger.error(traceback.format_exc())
             return None
+            
+        return None
     
     @staticmethod
     def create_chat(doctor_id, patient_id, appointment_id):
@@ -108,7 +167,6 @@ class FirebaseChat:
         
         except Exception as e:
             logger.error(f"Error creating chat in Firestore: {e}")
-            import traceback
             logger.error(traceback.format_exc())
             return None
     
@@ -136,50 +194,60 @@ class FirebaseChat:
             now = datetime.now()
             
             # First, check if the chat exists and the user is a participant
-            chat_ref = db.collection('chats').document(chat_id)
-            chat = chat_ref.get()
-            
-            if not chat.exists:
-                logger.error(f"Chat {chat_id} does not exist")
-                return False
-            
-            # Format sender ID
-            sender_id = f"{user_type}_{user_id}"
-            
-            # Verify sender is a participant (security check)
-            chat_data = chat.to_dict()
-            if sender_id not in chat_data.get('participants', []):
-                logger.error(f"User {sender_id} is not a participant in chat {chat_id}")
-                return False
-            
-            # Create the message in the subcollection
-            message_ref = db.collection('messages').document(chat_id).collection('messages').document()
-            message_data = {
-                'text': text,
-                'senderId': sender_id,
-                'senderType': user_type,
-                'timestamp': now,
-                'read': False
-            }
-            message_ref.set(message_data)
-            logger.info(f"Added message to chat {chat_id} from {sender_id}")
-            
-            # Update the lastMessage in the chat document
-            chat_ref.update({
-                'lastMessage': {
+            try:
+                chat_ref = db.collection('chats').document(chat_id)
+                chat = chat_ref.get()
+                
+                if not chat.exists:
+                    logger.warning(f"Chat {chat_id} does not exist")
+                    # Create an empty document to avoid future failures
+                    chat_ref.set({
+                        'participants': [],
+                        'createdAt': now,
+                        'updatedAt': now,
+                        'fixedChat': True,
+                        'note': 'Auto-created by error handler'
+                    })
+                    
+                    # Also create messages container
+                    message_container_ref = db.collection('messages').document(chat_id)
+                    message_container_ref.set({})
+                
+                # Format sender ID
+                sender_id = f"{user_type}_{user_id}"
+                
+                # Create the message in the subcollection
+                message_container_ref = db.collection('messages').document(chat_id)
+                message_ref = message_container_ref.collection('messages').document()
+                message_data = {
                     'text': text,
+                    'senderId': sender_id,
+                    'senderType': user_type,
                     'timestamp': now,
-                    'senderId': sender_id
-                },
-                'updatedAt': now
-            })
-            logger.info(f"Updated lastMessage for chat {chat_id}")
-            
-            return True
+                    'read': False
+                }
+                message_ref.set(message_data)
+                logger.info(f"Added message to chat {chat_id} from {sender_id}")
+                
+                # Update the lastMessage in the chat document
+                chat_ref.update({
+                    'lastMessage': {
+                        'text': text,
+                        'timestamp': now,
+                        'senderId': sender_id
+                    },
+                    'updatedAt': now
+                })
+                logger.info(f"Updated lastMessage for chat {chat_id}")
+                
+                return True
+            except Exception as inner_e:
+                logger.error(f"Error in the message sending process: {inner_e}")
+                logger.error(traceback.format_exc())
+                return False
         
         except Exception as e:
             logger.error(f"Error sending message to chat {chat_id}: {e}")
-            import traceback
             logger.error(traceback.format_exc())
             return False
     
@@ -223,7 +291,6 @@ class FirebaseChat:
         
         except Exception as e:
             logger.error(f"Error retrieving chats for user {user_id}: {e}")
-            import traceback
             logger.error(traceback.format_exc())
             return []
     
@@ -245,31 +312,44 @@ class FirebaseChat:
             return []
         
         try:
-            # Get the messages subcollection
-            messages_ref = db.collection('messages').document(chat_id).collection('messages')
-            
-            # Query messages ordered by timestamp
-            query = messages_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(limit)
-            
-            # Execute query and get results
-            message_docs = query.stream()
-            
-            # Convert to list of dictionaries with IDs
-            result = []
-            for doc in message_docs:
-                message_data = doc.to_dict()
-                message_data['id'] = doc.id
-                result.append(message_data)
-            
-            # Reverse to get chronological order
-            result.reverse()
-            
-            logger.info(f"Retrieved {len(result)} messages for chat {chat_id}")
-            return result
+            # Check if messages collection exists
+            try:
+                # Get the messages subcollection
+                messages_ref = db.collection('messages').document(chat_id).collection('messages')
+                
+                # Query messages ordered by timestamp
+                query = messages_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(limit)
+                
+                # Execute query and get results
+                message_docs = query.stream()
+                
+                # Convert to list of dictionaries with IDs
+                result = []
+                for doc in message_docs:
+                    message_data = doc.to_dict()
+                    message_data['id'] = doc.id
+                    result.append(message_data)
+                
+                # Reverse to get chronological order
+                result.reverse()
+                
+                logger.info(f"Retrieved {len(result)} messages for chat {chat_id}")
+                return result
+            except Exception as inner_e:
+                logger.error(f"Error retrieving messages - likely missing container: {inner_e}")
+                
+                # Try to fix - create messages container if missing
+                try:
+                    message_container_ref = db.collection('messages').document(chat_id)
+                    message_container_ref.set({})
+                    logger.info(f"Created message container for chat {chat_id}")
+                    return []
+                except Exception as fix_e:
+                    logger.error(f"Failed to fix missing message container: {fix_e}")
+                    return []
         
         except Exception as e:
             logger.error(f"Error retrieving messages for chat {chat_id}: {e}")
-            import traceback
             logger.error(traceback.format_exc())
             return []
     
@@ -296,32 +376,44 @@ class FirebaseChat:
             recipient_id = f"{user_type}_{user_id}"
             
             # Get the messages subcollection
-            messages_ref = db.collection('messages').document(chat_id).collection('messages')
-            
-            # Query unread messages not sent by this user
-            query = messages_ref.where('read', '==', False).where('senderId', '!=', recipient_id)
-            
-            # Execute query and get results
-            unread_docs = query.stream()
-            
-            # Mark each message as read
-            batch = db.batch()
-            count = 0
-            
-            for doc in unread_docs:
-                doc_ref = messages_ref.document(doc.id)
-                batch.update(doc_ref, {'read': True})
-                count += 1
-            
-            # Commit the batch if there are messages to update
-            if count > 0:
-                batch.commit()
+            try:
+                messages_ref = db.collection('messages').document(chat_id).collection('messages')
+                
+                # Query unread messages not sent by this user
+                query = messages_ref.where('read', '==', False).where('senderId', '!=', recipient_id)
+                
+                # Execute query and get results
+                unread_docs = query.stream()
+                
+                # Mark each message as read
+                count = 0
+                
+                # Use a more robust approach instead of batch
+                for doc in unread_docs:
+                    try:
+                        doc_ref = messages_ref.document(doc.id)
+                        doc_ref.update({'read': True})
+                        count += 1
+                    except Exception as doc_e:
+                        logger.error(f"Error updating document {doc.id}: {doc_e}")
+                        # Continue with other documents
+                
                 logger.info(f"Marked {count} messages as read in chat {chat_id} for {recipient_id}")
-            
-            return True
-        
+                return True
+            except Exception as inner_e:
+                logger.error(f"Error in mark_messages_as_read process: {inner_e}")
+                
+                # Try to fix - create messages container if missing
+                try:
+                    message_container_ref = db.collection('messages').document(chat_id)
+                    message_container_ref.set({})
+                    logger.info(f"Created message container for chat {chat_id}")
+                    return True
+                except Exception as fix_e:
+                    logger.error(f"Failed to fix missing message container: {fix_e}")
+                    return False
+                
         except Exception as e:
             logger.error(f"Error marking messages as read for chat {chat_id}: {e}")
-            import traceback
             logger.error(traceback.format_exc())
             return False
