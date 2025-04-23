@@ -9,3 +9,4 @@ PyJWT>=2.6.0
 Pillow>=10.0.0
 requests>=2.31.0  # Added requests library
 PyJWT>=2.8.0      # Added explicit PyJWT dependency
+firebase-admin>=6.2.0

@@ -1,0 +1,16 @@
+Defaulting to user installation because normal site-packages is not writeable
+Looking in indexes: https://pypi.org/simple, https://pypi.ngc.nvidia.com
+Collecting firebase-admin
+  Downloading firebase_admin-6.7.0-py3-none-any.whl.metadata (1.5 kB)
+Collecting cachecontrol>=0.12.14 (from firebase-admin)
+  Downloading cachecontrol-0.14.2-py3-none-any.whl.metadata (3.1 kB)
+Collecting google-api-python-client>=1.7.8 (from firebase-admin)
+  Downloading google_api_python_client-2.167.0-py2.py3-none-any.whl.metadata (6.7 kB)
+Collecting google-cloud-storage>=1.37.1 (from firebase-admin)
+  Downloading google_cloud_storage-3.1.0-py2.py3-none-any.whl.metadata (12 kB)
+Requirement already satisfied: pyjwt>=2.5.0 in c:\users\bazz\appdata\roaming\python\python313\site-packages (from pyjwt[crypto]>=2.5.0->firebase-admin) (2.10.1)
+Collecting google-api-core<3.0.0dev,>=1.22.1 (from google-api-core[grpc]<3.0.0dev,>=1.22.1; platform_python_implementation != "PyPy"->firebase-admin)
+  Downloading google_api_core-2.24.2-py3-none-any.whl.metadata (3.0 kB)
+Collecting google-cloud-firestore>=2.19.0 (from firebase-admin)
+  Downloading google_cloud_firestore-2.20.2-py3-none-any.whl.metadata (9.9 kB)
+Requirement already satisfied: requests>=2.16.0 in c:\users\bazz\appdata\roaming\python\python313\site-packages (from cachecontrol>=0.12.14->firebase-admin) (2.32.3)

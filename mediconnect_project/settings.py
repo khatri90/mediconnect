@@ -76,7 +76,9 @@ INSTALLED_APPS = [
     'corsheaders',
     'whitenoise.runserver_nostatic',  # Added for static files on Render
     'doctors',
+    'chat',  # Add the new chat app
     'admin_portal'
+    
 ]
 
 MIDDLEWARE = [
@@ -91,6 +93,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+FIREBASE_SERVICE_ACCOUNT_JSON = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
+FIREBASE_STORAGE_BUCKET = os.environ.get('FIREBASE_STORAGE_BUCKET', '')
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # For development only
 CORS_ALLOW_CREDENTIALS = True

@@ -48,6 +48,7 @@ urlpatterns = [
     path('', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/', include('doctors.urls')),
+    path('api/', include('chat.urls')),  # Add this line for chat URLs
     path('api/admin/', include('admin_portal.urls')),  # Add this line for admin portal API
     path('media/<path:path>', serve_default_image, name='serve_media'),
 ]
