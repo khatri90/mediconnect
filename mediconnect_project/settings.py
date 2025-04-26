@@ -28,7 +28,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-70(*hsc-y&xd&dc+e5jr6
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # TEMPORARILY SET DEBUG TRUE TO SEE DETAILED ERRORS
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', '').lower() == 'true'
 
 ALLOWED_HOSTS = [
     'localhost',
@@ -172,6 +172,10 @@ LOGGING = {
     },
 }
 
+# Media files for uploads
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
@@ -237,14 +241,80 @@ ZOOM_CLIENT_SECRET = os.environ.get('ZOOM_CLIENT_SECRET', '')
 ZOOM_ACCOUNT_ID = os.environ.get('ZOOM_ACCOUNT_ID', '')  # Your Zoom account ID
 ZOOM_WEBHOOK_SECRET_TOKEN = os.environ.get('ZOOM_WEBHOOK_SECRET_TOKEN', '')
 
-# Firebase Storage Settings
-FIREBASE_SERVICE_ACCOUNT_JSON = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
+# =============================================
+# FIREBASE STORAGE CONFIGURATION
+# =============================================
+
+# Firebase Storage Settings - Enable by default
 FIREBASE_STORAGE_BUCKET = os.environ.get('FIREBASE_STORAGE_BUCKET', '')
 FIREBASE_URL_EXPIRATION = 60 * 60 * 24 * 7  # URL expiration time in seconds (7 days)
+USE_FIREBASE_STORAGE = True  # Always use Firebase in production
 
-# Change the default storage backend to Firebase
-DEFAULT_FILE_STORAGE = 'mediconnect_project.firebase_storage.FirebaseStorage'
+# Configure Django to use Firebase Storage
+if not DEBUG and USE_FIREBASE_STORAGE and FIREBASE_STORAGE_BUCKET:
+    DEFAULT_FILE_STORAGE = 'mediconnect_project.firebase_storage.FirebaseMediaStorage'
+    print(f"Using Firebase Storage with bucket: {FIREBASE_STORAGE_BUCKET}")
+else:
+    # Use local storage in development
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+    print("Using local file storage")
+    
+# Add our ForceFirebaseStorageMiddleware to the MIDDLEWARE list
+MIDDLEWARE = [
+    'mediconnect_project.middleware.ForceFirebaseStorageMiddleware',  # Add this line FIRST
+] + MIDDLEWARE  # Keep all existing middleware
 
-# Keep MEDIA_URL for template usage
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')  # Keep this for local development
+# Update logging configuration to include Firebase classes
+LOGGING['loggers']['mediconnect_project.firebase_storage'] = {
+    'handlers': ['console'],
+    'level': 'DEBUG',
+    'propagate': False,
+}
+
+LOGGING['loggers']['mediconnect_project.firebase_uploader'] = {
+    'handlers': ['console'],
+    'level': 'DEBUG',
+    'propagate': False,
+}
+
+LOGGING['loggers']['mediconnect_project.middleware'] = {
+    'handlers': ['console'],
+    'level': 'DEBUG',
+    'propagate': False,
+}
+
+# Force the correct initialization of Firebase Storage at startup
+if not DEBUG and USE_FIREBASE_STORAGE and FIREBASE_STORAGE_BUCKET:
+    try:
+        # This section is for debugging purposes
+        import sys
+        from mediconnect_project.firebase_storage import FirebaseMediaStorage
+        
+        print("*** DIRECTLY INITIALIZING FIREBASE STORAGE AT STARTUP ***")
+        firebase_storage = FirebaseMediaStorage()
+        
+        # Ensure it's initialized
+        if not firebase_storage.initialized:
+            init_result = firebase_storage._init_firebase()
+            print(f"Firebase initialization result: {init_result}")
+            
+            if not init_result:
+                print("WARNING: Failed to initialize Firebase, storage may not work correctly")
+        
+        # Override the default storage
+        import django.core.files.storage
+        from django.utils.functional import empty
+        
+        # Reset default storage
+        if hasattr(django.core.files.storage, '_wrapped'):
+            django.core.files.storage._wrapped = empty
+            
+        # Set our firebase storage as the default
+        django.core.files.storage.default_storage._wrapped = firebase_storage
+        
+        print(f"FORCED STORAGE BACKEND IS NOW: {django.core.files.storage.default_storage.__class__.__name__}")
+        
+    except Exception as e:
+        import traceback
+        print(f"ERROR initializing Firebase storage at startup: {e}")
+        print(traceback.format_exc())
