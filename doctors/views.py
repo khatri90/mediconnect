@@ -408,6 +408,7 @@ class PatientAppointmentAPIView(APIView):
     """
     API endpoint for patients to manage their appointments
     """
+    # In views.py, modify the PatientAppointmentAPIView get method
     def get(self, request, format=None):
         """Get all appointments for a patient"""
         # Get patient ID from authorization token
@@ -422,13 +423,13 @@ class PatientAppointmentAPIView(APIView):
         # Find all appointments for this patient
         appointments = Appointment.objects.filter(patient_id=patient_id)
         
-        # Serialize and return
-        serializer = AppointmentSerializer(appointments, many=True)
+        # Serialize and return - ADD THE CONTEXT HERE
+        serializer = AppointmentSerializer(appointments, many=True, context={'request': request})
         return Response({
             'status': 'success',
             'appointments': serializer.data
         })
-        
+               
     def post(self, request, format=None):
         """Create a new appointment for a patient with Zoom integration"""
         # Get patient ID and info from token

@@ -25,8 +25,10 @@ class DoctorSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
 
+# In serializers.py, modify the AppointmentSerializer
 class AppointmentSerializer(serializers.ModelSerializer):
     doctor_name = serializers.CharField(source='doctor.full_name', read_only=True)
+    doctor_photo = serializers.SerializerMethodField()
     
     class Meta:
         model = Appointment
@@ -36,10 +38,27 @@ class AppointmentSerializer(serializers.ModelSerializer):
             'package_type', 'problem_description', 'transaction_number', 'amount', 'status', 
             'created_at', 'updated_at', 'doctor_notes', 'admin_notes',
             'zoom_meeting_id', 'zoom_meeting_url', 'zoom_meeting_password', 'zoom_meeting_status',
-            'zoom_host_joined', 'zoom_client_joined', 'zoom_meeting_duration'
+            'zoom_host_joined', 'zoom_client_joined', 'zoom_meeting_duration', 'doctor_photo'
         ]
         read_only_fields = ['id', 'appointment_id', 'created_at', 'updated_at']
-             
+    
+    def get_doctor_photo(self, obj):
+        """Get the doctor's profile photo with correct Firebase URL"""
+        try:
+            # Try to get profile photo
+            profile_photo = DoctorDocument.objects.get(
+                doctor=obj.doctor, 
+                document_type='profile_photo'
+            )
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(profile_photo.file.url)
+            else:
+                # Direct Firebase URL if no request context is available
+                return profile_photo.file.url
+        except DoctorDocument.DoesNotExist:
+            return None
+                    
 class DoctorSerializer(serializers.ModelSerializer):
     documents = DoctorDocumentSerializer(many=True, read_only=True)
     
