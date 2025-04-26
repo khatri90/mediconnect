@@ -17,33 +17,9 @@ import dj_database_url
 import sys
 import psycopg2.extensions
 
-# Update this section in your DATABASE configuration
-if 'DATABASE_URL' in os.environ:
-    # Running on Render.com with PostgreSQL
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('PGDATABASE', 'doctomoris'),
-            'USER': os.environ.get('PGUSER', 'doctomoris_user'),
-            'PASSWORD': os.environ.get('PGPASSWORD', ''),
-            'HOST': os.environ.get('PGHOST', 'dpg-cved947noe9s73ena2eg-a'),
-            'PORT': os.environ.get('PGPORT', '5432'),
-            'OPTIONS': {
-                'connect_timeout': 10,
-                'isolation_level': psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE,
-            },
-            'CONN_MAX_AGE': 0,  # Close connections after each request
-        }
-    }
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Media files configuration for Render
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-# Ensure uploaded files directory exists
-os.makedirs(MEDIA_ROOT, exist_ok=True)
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
@@ -78,7 +54,6 @@ INSTALLED_APPS = [
     'doctors',
     'chat',  # Add the new chat app
     'admin_portal'
-    
 ]
 
 MIDDLEWARE = [
@@ -93,8 +68,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-FIREBASE_SERVICE_ACCOUNT_JSON = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
-FIREBASE_STORAGE_BUCKET = os.environ.get('FIREBASE_STORAGE_BUCKET', '')
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # For development only
 CORS_ALLOW_CREDENTIALS = True
@@ -199,10 +172,6 @@ LOGGING = {
     },
 }
 
-# Media files for uploads
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
@@ -267,3 +236,15 @@ ZOOM_CLIENT_ID = os.environ.get('ZOOM_CLIENT_ID', '')
 ZOOM_CLIENT_SECRET = os.environ.get('ZOOM_CLIENT_SECRET', '')
 ZOOM_ACCOUNT_ID = os.environ.get('ZOOM_ACCOUNT_ID', '')  # Your Zoom account ID
 ZOOM_WEBHOOK_SECRET_TOKEN = os.environ.get('ZOOM_WEBHOOK_SECRET_TOKEN', '')
+
+# Firebase Storage Settings
+FIREBASE_SERVICE_ACCOUNT_JSON = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
+FIREBASE_STORAGE_BUCKET = os.environ.get('FIREBASE_STORAGE_BUCKET', '')
+FIREBASE_URL_EXPIRATION = 60 * 60 * 24 * 7  # URL expiration time in seconds (7 days)
+
+# Change the default storage backend to Firebase
+DEFAULT_FILE_STORAGE = 'mediconnect_project.firebase_storage.FirebaseStorage'
+
+# Keep MEDIA_URL for template usage
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')  # Keep this for local development
