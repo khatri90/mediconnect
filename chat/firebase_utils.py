@@ -354,6 +354,69 @@ class FirebaseChat:
             return []
     
     @staticmethod
+    def get_new_messages(chat_id, since_datetime, limit=100):
+        """
+        Get messages for a specific chat that were created after a specific datetime
+        
+        Args:
+            chat_id (str): Firebase chat document ID
+            since_datetime (datetime): Only fetch messages created after this time
+            limit (int): Maximum number of messages to retrieve
+            
+        Returns:
+            list: List of message documents or empty list if none or error
+        """
+        db = FirebaseChat.get_firestore_client()
+        if not db:
+            logger.error("Could not get Firestore client for retrieving new chat messages")
+            return []
+        
+        try:
+            # Check if messages collection exists
+            try:
+                # Get the messages subcollection
+                messages_ref = db.collection('messages').document(chat_id).collection('messages')
+                
+                # Convert datetime to Firestore timestamp format
+                # Firebase timestamps and Python datetime objects aren't directly comparable
+                # We create a Firestore timestamp from the Python datetime
+                from firebase_admin import firestore
+                since_timestamp = firestore.Timestamp.from_datetime(since_datetime)
+                
+                # Query messages created after the since_timestamp
+                query = messages_ref.where('timestamp', '>', since_timestamp).order_by('timestamp', direction=firestore.Query.ASCENDING).limit(limit)
+                
+                # Execute query and get results
+                message_docs = query.stream()
+                
+                # Convert to list of dictionaries with IDs
+                result = []
+                for doc in message_docs:
+                    message_data = doc.to_dict()
+                    message_data['id'] = doc.id
+                    result.append(message_data)
+                
+                logger.info(f"Retrieved {len(result)} new messages for chat {chat_id} since {since_datetime}")
+                return result
+            except Exception as inner_e:
+                logger.error(f"Error retrieving new messages: {inner_e}")
+                
+                # Try to fix - create messages container if missing
+                try:
+                    message_container_ref = db.collection('messages').document(chat_id)
+                    message_container_ref.set({})
+                    logger.info(f"Created message container for chat {chat_id}")
+                    return []
+                except Exception as fix_e:
+                    logger.error(f"Failed to fix missing message container: {fix_e}")
+                    return []
+        
+        except Exception as e:
+            logger.error(f"Error retrieving new messages for chat {chat_id}: {e}")
+            logger.error(traceback.format_exc())
+            return []
+    
+    @staticmethod
     def mark_messages_as_read(chat_id, user_id, user_type):
         """
         Mark all messages in a chat as read for a user

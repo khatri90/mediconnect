@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.authentication import TokenAuthentication
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from datetime import datetime
 
 from .models import Chat
 from doctors.models import Appointment, Doctor
@@ -14,10 +15,13 @@ from .serializers import (
     SendMessageSerializer
 )
 from .firebase_utils import FirebaseChat
+# Import the new timestamp utilities
+from .timestamp_utils import parse_timestamp, format_timestamp, now
 import logging
 import jwt
 from django.conf import settings
 import traceback
+import dateutil.parser  # Make sure you have python-dateutil installed
 
 logger = logging.getLogger(__name__)
 
@@ -91,18 +95,49 @@ class ChatListView(generics.ListAPIView):
         if not user_type or not user_id:
             return Chat.objects.none()
         
-        # Filter based on user type
+        # Get base queryset based on user type
         if user_type == 'doctor':
             try:
                 doctor = Doctor.objects.get(id=user_id)
-                return Chat.objects.filter(appointment__doctor=doctor)
+                queryset = Chat.objects.filter(appointment__doctor=doctor)
             except Doctor.DoesNotExist:
                 return Chat.objects.none()
         elif user_type == 'patient':
-            return Chat.objects.filter(appointment__patient_id=user_id)
+            queryset = Chat.objects.filter(appointment__patient_id=user_id)
+        else:
+            return Chat.objects.none()
         
-        return Chat.objects.none()
-
+        # Apply timestamp filter for incremental updates if provided
+        since_timestamp = self.request.query_params.get('since', None)
+        if since_timestamp:
+            try:
+                # Convert ISO 8601 string to datetime object
+                import dateutil.parser
+                since_datetime = dateutil.parser.parse(since_timestamp)
+                
+                # Filter to get only chats updated since the provided timestamp
+                queryset = queryset.filter(updated_at__gt=since_datetime)
+                
+                logger.info(f"Filtered chats for {user_type}_{user_id} since {since_timestamp}: {queryset.count()} results")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Invalid timestamp format: {since_timestamp}, error: {e}")
+                # If timestamp is invalid, don't apply the filter
+        
+        return queryset
+    
+    def list(self, request, *args, **kwargs):
+        """Override list method to include current timestamp in response"""
+        response = super().list(request, *args, **kwargs)
+        
+        # Add current timestamp for next incremental update
+        response.data = {
+            'status': 'success',
+            'chats': response.data,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        return response
+    
 class ChatDetailView(generics.RetrieveAPIView):
     """Retrieve a specific chat by Firebase ID"""
     serializer_class = ChatSerializer
@@ -131,8 +166,26 @@ class ChatMessagesView(APIView):
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
+            # Check for 'since' parameter for incremental updates
+            since_timestamp = request.query_params.get('since', None)
+            
             # Get messages from Firebase
-            messages = FirebaseChat.get_chat_messages(firebase_chat_id)
+            if since_timestamp:
+                logger.info(f"Fetching messages for chat {firebase_chat_id} since {since_timestamp}")
+                try:
+                    # Convert ISO 8601 string to datetime object
+                    import dateutil.parser
+                    since_datetime = dateutil.parser.parse(since_timestamp)
+                    
+                    # Get new messages from Firebase
+                    messages = FirebaseChat.get_new_messages(firebase_chat_id, since_datetime)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Invalid timestamp format: {since_timestamp}, error: {e}")
+                    # Fall back to getting all messages
+                    messages = FirebaseChat.get_chat_messages(firebase_chat_id)
+            else:
+                # No timestamp provided, get all messages
+                messages = FirebaseChat.get_chat_messages(firebase_chat_id)
             
             # Serialize messages
             serializer = MessageSerializer(messages, many=True)
@@ -145,13 +198,21 @@ class ChatMessagesView(APIView):
                 logger.error(f"Error marking messages as read: {e}")
                 logger.error(traceback.format_exc())
             
-            return Response(serializer.data)
+            return Response({
+                'status': 'success',
+                'messages': serializer.data,
+                'timestamp': datetime.now().isoformat()  # Include current timestamp for next incremental update
+            })
         except Exception as e:
             logger.error(f"Error in ChatMessagesView: {e}")
             logger.error(traceback.format_exc())
             # Return empty list rather than error
-            return Response([])
-
+            return Response({
+                'status': 'error',
+                'messages': [],
+                'error': str(e)
+            })
+            
 class SendMessageView(APIView):
     """View for sending a message to a Firebase chat"""
     permission_classes = [IsChatParticipant]
