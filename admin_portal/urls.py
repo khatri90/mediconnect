@@ -3,6 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
+
 router = DefaultRouter()
 router.register(r'users', views.AdminUserViewSet)
 router.register(r'doctors', views.AdminDoctorViewSet)
@@ -10,6 +11,7 @@ router.register(r'faqs', views.AdminFAQViewSet)
 router.register(r'tickets', views.AdminSupportTicketViewSet)
 router.register(r'reviews', views.AdminReviewViewSet)
 router.register(r'appointments', views.AdminAppointmentViewSet)
+router.register(r'user-management', views.UserManagementViewSet) 
 
 urlpatterns = [
     # Admin login
