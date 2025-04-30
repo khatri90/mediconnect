@@ -22,8 +22,11 @@ from .serializers import (
 import jwt
 import datetime
 from django.conf import settings
-from django.db.models import Sum, Count, Avg
-
+from rest_framework.permissions import IsAdminUser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.db.models import Q
+from user_accounts.models import User  
+from .pagination import StandardResultsSetPagination
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DELTA = datetime.timedelta(days=1)  # Admin tokens expire in 1 day
@@ -421,3 +424,145 @@ class AdminAppointmentViewSet(viewsets.ModelViewSet):
             
         serializer = self.get_serializer(upcoming, many=True)
         return Response(serializer.data)
+        
+class UserManagementViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing User objects with full CRUD operations
+    """
+    queryset = User.objects.all().order_by('-date_joined')
+    permission_classes = [IsAdminUser]
+    pagination_class = StandardResultsSetPagination
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['email', 'name', 'phone_number']
+    
+    def get_serializer_class(self):
+        """Return appropriate serializer class based on the request"""
+        from rest_framework import serializers
+        
+        class UserManagementSerializer(serializers.ModelSerializer):
+            profile_picture_url = serializers.SerializerMethodField()
+            
+            class Meta:
+                model = User
+                fields = ('id', 'email', 'name', 'phone_number', 'dob', 'gender', 
+                          'profile_picture_url', 'is_active', 'is_staff', 
+                          'is_superuser', 'date_joined', 'last_login')
+                read_only_fields = ('date_joined', 'last_login')
+                
+            def get_profile_picture_url(self, obj):
+                """Return Firebase URL first, fallback to Django-generated URL."""
+                # Use Firebase URL if available
+                if obj.profile_picture_firebase_url:
+                    return obj.profile_picture_firebase_url
+                    
+                # Fallback to Django storage URL
+                if obj.profile_picture:
+                    request = self.context.get('request')
+                    return request.build_absolute_uri(obj.profile_picture.url) if request else obj.profile_picture.url
+                return None
+            
+            def create(self, validated_data):
+                """Create a new user with encrypted password and return it"""
+                password = validated_data.pop('password', None)
+                user = User.objects.create_user(**validated_data)
+                
+                if password:
+                    user.set_password(password)
+                    user.save()
+                    
+                return user
+            
+            def update(self, instance, validated_data):
+                """Update a user, setting the password correctly and return it"""
+                password = validated_data.pop('password', None)
+                profile_picture = validated_data.pop('profile_picture', None)
+                
+                # Update user fields
+                for attr, value in validated_data.items():
+                    setattr(instance, attr, value)
+                
+                # Set new password if provided
+                if password:
+                    instance.set_password(password)
+                
+                # Handle profile picture separately
+                if profile_picture:
+                    instance.profile_picture = profile_picture
+                    
+                instance.save()
+                return instance
+        
+        return UserManagementSerializer
+    
+    def get_serializer_context(self):
+        """Add request to serializer context for building absolute URLs"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    @action(detail=False, methods=['get'])
+    def active(self, request):
+        """Get only active users"""
+        active_users = User.objects.filter(is_active=True).order_by('-date_joined')
+        page = self.paginate_queryset(active_users)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+            
+        serializer = self.get_serializer(active_users, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def admins(self, request):
+        """Get only admin users"""
+        admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).order_by('-date_joined')
+        page = self.paginate_queryset(admin_users)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+            
+        serializer = self.get_serializer(admin_users, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """Activate a user account"""
+        user = self.get_object()
+        user.is_active = True
+        user.save()
+        return Response({
+            'message': f'User {user.email} has been activated'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """Deactivate a user account"""
+        user = self.get_object()
+        user.is_active = False
+        user.save()
+        return Response({
+            'message': f'User {user.email} has been deactivated'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def make_admin(self, request, pk=None):
+        """Make a user an admin"""
+        user = self.get_object()
+        user.is_staff = True
+        user.save()
+        return Response({
+            'message': f'User {user.email} has been made an admin'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def remove_admin(self, request, pk=None):
+        """Remove admin privileges from a user"""
+        user = self.get_object()
+        user.is_staff = False
+        user.save()
+        return Response({
+            'message': f'Admin privileges removed from {user.email}'
+        })
