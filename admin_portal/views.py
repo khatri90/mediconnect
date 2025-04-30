@@ -22,11 +22,18 @@ from .serializers import (
 import jwt
 import datetime
 from django.conf import settings
+from rest_framework import viewsets, status, filters
+from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db.models import Q
-from user_accounts.models import User  
-from .pagination import StandardResultsSetPagination
+from .models import UserProxy
+from rest_framework.pagination import PageNumberPagination
+from django.contrib.auth.hashers import make_password
+import logging
+logger = logging.getLogger(__name__)
+
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DELTA = datetime.timedelta(days=1)  # Admin tokens expire in 1 day
@@ -425,11 +432,17 @@ class AdminAppointmentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(upcoming, many=True)
         return Response(serializer.data)
         
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination class for admin views"""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class UserManagementViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing User objects with full CRUD operations
     """
-    queryset = User.objects.all().order_by('-date_joined')
+    queryset = UserProxy.objects.all().order_by('-date_joined')
     permission_classes = [IsAdminUser]
     pagination_class = StandardResultsSetPagination
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -442,12 +455,13 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         
         class UserManagementSerializer(serializers.ModelSerializer):
             profile_picture_url = serializers.SerializerMethodField()
+            password = serializers.CharField(write_only=True, required=False)
             
             class Meta:
-                model = User
+                model = UserProxy
                 fields = ('id', 'email', 'name', 'phone_number', 'dob', 'gender', 
-                          'profile_picture_url', 'is_active', 'is_staff', 
-                          'is_superuser', 'date_joined', 'last_login')
+                         'profile_picture_url', 'is_active', 'is_staff', 
+                         'is_superuser', 'date_joined', 'last_login', 'password')
                 read_only_fields = ('date_joined', 'last_login')
                 
             def get_profile_picture_url(self, obj):
@@ -461,37 +475,6 @@ class UserManagementViewSet(viewsets.ModelViewSet):
                     request = self.context.get('request')
                     return request.build_absolute_uri(obj.profile_picture.url) if request else obj.profile_picture.url
                 return None
-            
-            def create(self, validated_data):
-                """Create a new user with encrypted password and return it"""
-                password = validated_data.pop('password', None)
-                user = User.objects.create_user(**validated_data)
-                
-                if password:
-                    user.set_password(password)
-                    user.save()
-                    
-                return user
-            
-            def update(self, instance, validated_data):
-                """Update a user, setting the password correctly and return it"""
-                password = validated_data.pop('password', None)
-                profile_picture = validated_data.pop('profile_picture', None)
-                
-                # Update user fields
-                for attr, value in validated_data.items():
-                    setattr(instance, attr, value)
-                
-                # Set new password if provided
-                if password:
-                    instance.set_password(password)
-                
-                # Handle profile picture separately
-                if profile_picture:
-                    instance.profile_picture = profile_picture
-                    
-                instance.save()
-                return instance
         
         return UserManagementSerializer
     
@@ -501,10 +484,71 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         context['request'] = self.request
         return context
     
+    def create(self, request, *args, **kwargs):
+        """Create a new user"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            # Extract validated data
+            data = serializer.validated_data
+            
+            # Hash the password if provided
+            if 'password' in data:
+                data['password'] = make_password(data['password'])
+            
+            # Create the user
+            user = UserProxy.objects.create(**data)
+            
+            # Return the created user
+            return Response(
+                self.get_serializer(user).data,
+                status=status.HTTP_201_CREATED
+            )
+        except Exception as e:
+            logger.error(f"Error creating user: {str(e)}")
+            return Response(
+                {'error': f"Error creating user: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def update(self, request, *args, **kwargs):
+        """Update a user"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            # Extract validated data
+            data = serializer.validated_data
+            
+            # Hash the password if provided
+            if 'password' in data:
+                data['password'] = make_password(data['password'])
+            
+            # Update each field
+            for key, value in data.items():
+                setattr(instance, key, value)
+            
+            # Save the user
+            instance.save()
+            
+            # Return the updated user
+            return Response(
+                self.get_serializer(instance).data
+            )
+        except Exception as e:
+            logger.error(f"Error updating user: {str(e)}")
+            return Response(
+                {'error': f"Error updating user: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @action(detail=False, methods=['get'])
     def active(self, request):
         """Get only active users"""
-        active_users = User.objects.filter(is_active=True).order_by('-date_joined')
+        active_users = UserProxy.objects.filter(is_active=True).order_by('-date_joined')
         page = self.paginate_queryset(active_users)
         
         if page is not None:
@@ -517,7 +561,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def admins(self, request):
         """Get only admin users"""
-        admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).order_by('-date_joined')
+        admin_users = UserProxy.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).order_by('-date_joined')
         page = self.paginate_queryset(admin_users)
         
         if page is not None:
