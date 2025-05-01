@@ -267,6 +267,21 @@ class SendMessageView(APIView):
                     )
                     
                     if success:
+                        # Only send notification if doctor is sending to patient
+                        if user_type == 'doctor':
+                            try:
+                                # Send notification via the doctomoris server
+                                self._send_message_notification(
+                                    patient_id=appointment.patient_id,
+                                    doctor_name=appointment.doctor.full_name or appointment.doctor.last_name,
+                                    message_preview=text,
+                                    appointment_id=appointment.appointment_id,
+                                    chat_id=chat_id
+                                )
+                            except Exception as notif_error:
+                                logger.error(f"Failed to send notification: {notif_error}")
+                                # Don't fail the API call if notification fails
+                        
                         return Response(
                             {'detail': 'Message sent successfully'},
                             status=status.HTTP_201_CREATED
@@ -293,7 +308,56 @@ class SendMessageView(APIView):
                 {'detail': 'An unexpected error occurred'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
+    
+    def _send_message_notification(self, patient_id, doctor_name, message_preview, appointment_id, chat_id):
+        """Send notification to the main server for a new message"""
+        # Add these imports at the top of your file if they're not already there
+        import requests
+        from django.conf import settings
+        
+        # Check if notification sending is enabled
+        if not hasattr(settings, 'DOCTOMORIS_API_KEY') or not settings.DOCTOMORIS_API_KEY:
+            logger.warning("DOCTOMORIS_API_KEY not configured, skipping notification")
+            return False
+            
+        # URL for the notification endpoint on the main server
+        notification_url = "https://doctomoris.onrender.com/api/notifications/chat-message/"
+        
+        # Prepare data payload
+        data = {
+            'patient_id': patient_id,
+            'doctor_name': doctor_name,
+            'message_preview': message_preview,
+            'appointment_id': appointment_id,
+            'chat_id': chat_id
+        }
+        
+        # Set up API key or auth token
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f"Bearer {settings.DOCTOMORIS_API_KEY}"
+        }
+        
+        try:
+            # Make the API call
+            response = requests.post(
+                notification_url,
+                json=data,
+                headers=headers,
+                timeout=5  # Set a timeout to avoid blocking
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Notification sent for patient {patient_id}")
+                return True
+            else:
+                logger.error(f"Notification API returned error: {response.status_code}, {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending notification: {e}")
+            return False
+        
 class MarkMessagesReadView(APIView):
     """View for marking messages as read in a Firebase chat"""
     permission_classes = [IsChatParticipant]
