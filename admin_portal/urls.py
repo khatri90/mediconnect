@@ -22,4 +22,10 @@ urlpatterns = [
     
     # Include router URLs
     path('', include(router.urls)),
+
+      path('users/view/', views.view_users, name='view-users'),
+    path('api/users/', views.get_users_data, name='get-users-data'),
+    path('api/users/<int:user_id>/', views.get_user_details, name='get-user-details'),
+    path('api/users/<int:user_id>/toggle-status/', views.toggle_user_status, name='toggle-user-status'),
+    path('api/users/<int:user_id>/toggle-admin/', views.toggle_admin_status, name='toggle-admin-status'),
 ]
