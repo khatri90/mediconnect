@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, Sum
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.views import APIView
@@ -20,40 +20,30 @@ from .serializers import (
     AdminDashboardStatsSerializer
 )
 import jwt
-import datetime
+from datetime import datetime, timedelta
 from django.conf import settings
-from rest_framework import viewsets, status, filters
-from rest_framework.response import Response
-from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from django.db.models import Q
 from .models import UserProxy
-from rest_framework.pagination import PageNumberPagination
-from django.contrib.auth.hashers import make_password
-from django.shortcuts import render
 from django.http import JsonResponse
-from django.db.models import Count
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import UserProxy
-from .pagination import StandardResultsSetPagination
-import json
 from django.views.decorators.csrf import csrf_exempt
-from datetime import datetime, timedelta
+import json
 import logging
+
 logger = logging.getLogger(__name__)
 
 JWT_SECRET = getattr(settings, 'JWT_SECRET', 'your-secret-key')
 JWT_ALGORITHM = 'HS256'
-JWT_EXPIRATION_DELTA = datetime.timedelta(days=1)  # Admin tokens expire in 1 day
+JWT_EXPIRATION_DELTA = timedelta(days=1)  # Admin tokens expire in 1 day
 
 def generate_admin_token(user_id):
     """Generate a JWT token for admin users"""
     payload = {
         'user_id': user_id,
         'is_admin': True,
-        'exp': datetime.datetime.utcnow() + JWT_EXPIRATION_DELTA
+        'exp': datetime.utcnow() + JWT_EXPIRATION_DELTA
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -217,7 +207,7 @@ class AdminDashboardStatsView(APIView):
                 else:
                     next_month = month_date.replace(month=month_date.month+1)
                 
-                last_day = (next_month - datetime.timedelta(days=1)).day
+                last_day = (next_month - timedelta(days=1)).day
                 month_end = month_date.replace(day=last_day)
                 
                 # Get appointments revenue for this month
@@ -441,12 +431,6 @@ class AdminAppointmentViewSet(viewsets.ModelViewSet):
             
         serializer = self.get_serializer(upcoming, many=True)
         return Response(serializer.data)
-        
-class StandardResultsSetPagination(PageNumberPagination):
-    """Standard pagination class for admin views"""
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 class UserManagementViewSet(viewsets.ModelViewSet):
     """
@@ -620,6 +604,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'Admin privileges removed from {user.email}'
         })
+
 def is_admin(user):
     """Check if the user is an admin."""
     return user.is_staff or user.is_superuser
