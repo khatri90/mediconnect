@@ -610,3 +610,233 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'Admin privileges removed from {user.email}'
         })
+def is_admin(user):
+    """Check if the user is an admin."""
+    return user.is_staff or user.is_superuser
+
+@login_required
+@user_passes_test(is_admin)
+def view_users(request):
+    """Render the user management page."""
+    today = datetime.now().strftime('%d %b, %Y')
+    return render(request, 'admin_portal/view-users.html', {'today': today})
+
+@login_required
+@user_passes_test(is_admin)
+def get_users_data(request):
+    """API endpoint to get users data for the table."""
+    try:
+        # Get query parameters
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        search = request.GET.get('search', '')
+        status_filter = request.GET.get('status', 'all')
+        sort_by = request.GET.get('sort_by', 'date_joined')
+        sort_order = request.GET.get('sort_order', 'desc')
+        
+        # Build the queryset
+        users_queryset = UserProxy.objects.all()
+        
+        # Apply search filter
+        if search:
+            users_queryset = users_queryset.filter(
+                name__icontains=search) | users_queryset.filter(
+                email__icontains=search) | users_queryset.filter(
+                phone_number__icontains=search
+            )
+        
+        # Apply status filter
+        if status_filter == 'active':
+            users_queryset = users_queryset.filter(is_active=True)
+        elif status_filter == 'inactive':
+            users_queryset = users_queryset.filter(is_active=False)
+        
+        # Apply sorting
+        if sort_order == 'desc':
+            sort_by = f'-{sort_by}'
+        users_queryset = users_queryset.order_by(sort_by)
+        
+        # Count total users
+        total_users = users_queryset.count()
+        
+        # Calculate pagination
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paginated_users = users_queryset[start_index:end_index]
+        
+        # Get appointment count for each user
+        # Here we're getting appointment counts from a hypothetical Appointment model
+        # In a real app, adjust this to match your actual models
+        from doctors.models import Appointment
+        
+        users_with_appointments = []
+        for user in paginated_users:
+            # Count appointments for this user
+            appointment_count = Appointment.objects.filter(patient_id=user.id).count()
+            
+            # Format the date to match the UI expectations
+            joined_date = user.date_joined.strftime('%b %d, %Y') if user.date_joined else ''
+            
+            # Create a user object with all needed data
+            user_data = {
+                'id': user.id,
+                'name': user.name,
+                'email': user.email,
+                'phone_number': user.phone_number or 'N/A',
+                'joined_date': joined_date,
+                'appointment_count': appointment_count,
+                'is_active': user.is_active,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+                'profile_picture_url': user.profile_picture_firebase_url or '',
+            }
+            users_with_appointments.append(user_data)
+        
+        # Get user statistics
+        total_active_users = UserProxy.objects.filter(is_active=True).count()
+        total_inactive_users = total_users - total_active_users
+        total_blocked_users = total_inactive_users  # For simplicity, we're treating inactive as blocked
+        
+        # Calculate new users this week
+        one_week_ago = datetime.now() - timedelta(days=7)
+        new_users_this_week = UserProxy.objects.filter(date_joined__gte=one_week_ago).count()
+        
+        # Get total appointments
+        total_appointments = Appointment.objects.count()
+        
+        # Prepare response data
+        response_data = {
+            'users': users_with_appointments,
+            'total_users': total_users,
+            'total_active_users': total_active_users,
+            'total_inactive_users': total_inactive_users,
+            'total_blocked_users': total_blocked_users,
+            'new_users_this_week': new_users_this_week,
+            'total_appointments': total_appointments,
+            'current_page': page,
+            'total_pages': (total_users + page_size - 1) // page_size,  # Ceiling division
+            'page_size': page_size,
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@login_required
+@user_passes_test(is_admin)
+@require_http_methods(["POST"])
+def toggle_user_status(request, user_id):
+    """API endpoint to toggle user active status."""
+    try:
+        data = json.loads(request.body)
+        action = data.get('action', '')
+        
+        user = UserProxy.objects.get(id=user_id)
+        
+        if action == 'activate':
+            user.is_active = True
+            message = f"User {user.name} has been activated successfully"
+        elif action == 'deactivate':
+            user.is_active = False
+            message = f"User {user.name} has been deactivated successfully"
+        else:
+            return JsonResponse({'error': 'Invalid action'}, status=400)
+        
+        user.save()
+        
+        return JsonResponse({'status': 'success', 'message': message})
+        
+    except UserProxy.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@login_required
+@user_passes_test(is_admin)
+@require_http_methods(["POST"])
+def toggle_admin_status(request, user_id):
+    """API endpoint to toggle user admin status."""
+    try:
+        data = json.loads(request.body)
+        action = data.get('action', '')
+        
+        user = UserProxy.objects.get(id=user_id)
+        
+        if action == 'make_admin':
+            user.is_staff = True
+            message = f"User {user.name} has been made an admin successfully"
+        elif action == 'remove_admin':
+            user.is_staff = False
+            message = f"Admin privileges removed from {user.name} successfully"
+        else:
+            return JsonResponse({'error': 'Invalid action'}, status=400)
+        
+        user.save()
+        
+        return JsonResponse({'status': 'success', 'message': message})
+        
+    except UserProxy.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+@user_passes_test(is_admin)
+def get_user_details(request, user_id):
+    """API endpoint to get detailed information about a specific user."""
+    try:
+        user = UserProxy.objects.get(id=user_id)
+        
+        # Get user appointments
+        from doctors.models import Appointment, Doctor
+        
+        appointments = Appointment.objects.filter(patient_id=user.id).order_by('-appointment_date')[:10]
+        
+        appointment_data = []
+        for appt in appointments:
+            doctor_name = f"Dr. {appt.doctor.first_name} {appt.doctor.last_name}" if appt.doctor else "N/A"
+            
+            appointment_data.append({
+                'id': appt.id,
+                'doctor_name': doctor_name,
+                'doctor_id': appt.doctor_id,
+                'date': appt.appointment_date.strftime('%d %b, %Y') if appt.appointment_date else '',
+                'time': appt.start_time.strftime('%I:%M %p') if appt.start_time else '',
+                'type': appt.appointment_type,
+                'status': appt.status,
+            })
+        
+        # Format the user details
+        user_data = {
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'phone_number': user.phone_number or 'N/A',
+            'gender': user.gender,
+            'gender_display': 'Male' if user.gender == 'M' else ('Female' if user.gender == 'F' else 'Other'),
+            'dob': user.dob.strftime('%d %b, %Y') if user.dob else 'N/A',
+            'age': calculate_age(user.dob) if user.dob else 'N/A',
+            'joined_date': user.date_joined.strftime('%d %b, %Y') if user.date_joined else '',
+            'last_login': user.last_login.strftime('%d %b, %Y') if user.last_login else 'Never',
+            'is_active': user.is_active,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'profile_picture_url': user.profile_picture_firebase_url or '',
+            'appointments': appointment_data,
+            'appointment_count': len(appointment_data),
+        }
+        
+        return JsonResponse(user_data)
+        
+    except UserProxy.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+def calculate_age(born):
+    """Calculate age from date of birth"""
+    today = datetime.today()
+    return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
