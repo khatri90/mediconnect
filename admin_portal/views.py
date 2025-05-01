@@ -31,6 +31,16 @@ from django.db.models import Q
 from .models import UserProxy
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth.hashers import make_password
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.db.models import Count
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required, user_passes_test
+from .models import UserProxy
+from .pagination import StandardResultsSetPagination
+import json
+from django.views.decorators.csrf import csrf_exempt
+from datetime import datetime, timedelta
 import logging
 logger = logging.getLogger(__name__)
 
