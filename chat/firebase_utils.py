@@ -377,6 +377,91 @@ class FirebaseChat:
                 # Get the messages subcollection
                 messages_ref = db.collection('messages').document(chat_id).collection('messages')
                 
+                # Make since_datetime timezone-naive if it has timezone info
+                if since_datetime.tzinfo is not None:
+                    since_datetime = since_datetime.replace(tzinfo=None)
+                
+                # Query messages created after the since_datetime
+                # First get all messages ordered by timestamp
+                query = messages_ref.order_by('timestamp', direction=firestore.Query.ASCENDING)
+                
+                # Execute query and get results
+                message_docs = query.stream()
+                
+                # Filter messages after the since_datetime in Python code
+                result = []
+                for doc in message_docs:
+                    message_data = doc.to_dict()
+                    message_data['id'] = doc.id
+                    
+                    # Extract the timestamp from the Firestore document
+                    doc_timestamp = message_data.get('timestamp')
+                    
+                    # If it's a Firestore timestamp object, convert to datetime
+                    if hasattr(doc_timestamp, 'seconds'):
+                        # Handle Firestore Timestamp object - this creates a naive datetime
+                        doc_datetime = datetime.fromtimestamp(doc_timestamp.seconds + (doc_timestamp.nanoseconds / 1e9))
+                    elif isinstance(doc_timestamp, datetime):
+                        # Handle if it's already a datetime
+                        # Make sure it's timezone-naive for comparison
+                        if doc_timestamp.tzinfo is not None:
+                            doc_datetime = doc_timestamp.replace(tzinfo=None)
+                        else:
+                            doc_datetime = doc_timestamp
+                    else:
+                        # Skip if we can't determine the timestamp
+                        continue
+                    
+                    # Only include messages newer than since_datetime
+                    if doc_datetime > since_datetime:
+                        result.append(message_data)
+                        
+                    # Limit the number of results
+                    if len(result) >= limit:
+                        break
+                
+                logger.info(f"Retrieved {len(result)} new messages for chat {chat_id} since {since_datetime}")
+                return result
+            except Exception as inner_e:
+                logger.error(f"Error retrieving new messages: {inner_e}")
+                logger.error(traceback.format_exc())
+                
+                # Try to fix - create messages container if missing
+                try:
+                    message_container_ref = db.collection('messages').document(chat_id)
+                    message_container_ref.set({})
+                    logger.info(f"Created message container for chat {chat_id}")
+                    return []
+                except Exception as fix_e:
+                    logger.error(f"Failed to fix missing message container: {fix_e}")
+                    return []
+        
+        except Exception as e:
+            logger.error(f"Error retrieving new messages for chat {chat_id}: {e}")
+            logger.error(traceback.format_exc())
+            return []
+        """
+        Get messages for a specific chat that were created after a specific datetime
+        
+        Args:
+            chat_id (str): Firebase chat document ID
+            since_datetime (datetime): Only fetch messages created after this time
+            limit (int): Maximum number of messages to retrieve
+            
+        Returns:
+            list: List of message documents or empty list if none or error
+        """
+        db = FirebaseChat.get_firestore_client()
+        if not db:
+            logger.error("Could not get Firestore client for retrieving new chat messages")
+            return []
+        
+        try:
+            # Check if messages collection exists
+            try:
+                # Get the messages subcollection
+                messages_ref = db.collection('messages').document(chat_id).collection('messages')
+                
                 # Convert datetime to Firestore timestamp format
                 # Instead of using firestore.Timestamp which doesn't exist in this version,
                 # we'll query directly using the datetime object
