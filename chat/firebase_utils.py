@@ -378,23 +378,43 @@ class FirebaseChat:
                 messages_ref = db.collection('messages').document(chat_id).collection('messages')
                 
                 # Convert datetime to Firestore timestamp format
-                # Firebase timestamps and Python datetime objects aren't directly comparable
-                # We create a Firestore timestamp from the Python datetime
-                from firebase_admin import firestore
-                since_timestamp = firestore.Timestamp.from_datetime(since_datetime)
+                # Instead of using firestore.Timestamp which doesn't exist in this version,
+                # we'll query directly using the datetime object
                 
-                # Query messages created after the since_timestamp
-                query = messages_ref.where('timestamp', '>', since_timestamp).order_by('timestamp', direction=firestore.Query.ASCENDING).limit(limit)
+                # Query messages created after the since_datetime
+                # First get all messages ordered by timestamp
+                query = messages_ref.order_by('timestamp', direction=firestore.Query.ASCENDING)
                 
                 # Execute query and get results
                 message_docs = query.stream()
                 
-                # Convert to list of dictionaries with IDs
+                # Filter messages after the since_datetime in Python code
                 result = []
                 for doc in message_docs:
                     message_data = doc.to_dict()
                     message_data['id'] = doc.id
-                    result.append(message_data)
+                    
+                    # Extract the timestamp from the Firestore document
+                    doc_timestamp = message_data.get('timestamp')
+                    
+                    # If it's a Firestore timestamp object, convert to datetime
+                    if hasattr(doc_timestamp, 'seconds'):
+                        # Handle Firestore Timestamp object
+                        doc_datetime = datetime.fromtimestamp(doc_timestamp.seconds + (doc_timestamp.nanoseconds / 1e9))
+                    elif isinstance(doc_timestamp, datetime):
+                        # Handle if it's already a datetime
+                        doc_datetime = doc_timestamp
+                    else:
+                        # Skip if we can't determine the timestamp
+                        continue
+                    
+                    # Only include messages newer than since_datetime
+                    if doc_datetime > since_datetime:
+                        result.append(message_data)
+                        
+                    # Limit the number of results
+                    if len(result) >= limit:
+                        break
                 
                 logger.info(f"Retrieved {len(result)} new messages for chat {chat_id} since {since_datetime}")
                 return result
@@ -415,7 +435,6 @@ class FirebaseChat:
             logger.error(f"Error retrieving new messages for chat {chat_id}: {e}")
             logger.error(traceback.format_exc())
             return []
-    
     @staticmethod
     def mark_messages_as_read(chat_id, user_id, user_type):
         """
