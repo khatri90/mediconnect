@@ -240,26 +240,6 @@ class FirebaseChat:
                 })
                 logger.info(f"Updated lastMessage for chat {chat_id}")
                 
-                # Send push notification if message is from doctor to patient
-                if user_type == 'doctor':
-                    try:
-                        from .firebase_notification_utils import FirebaseNotification
-                        notification_sent = FirebaseNotification.send_chat_notification(
-                            chat_id=chat_id,
-                            sender_type=user_type,
-                            sender_id=user_id,
-                            message_text=text
-                        )
-                        
-                        if notification_sent:
-                            logger.info(f"Successfully sent push notification for chat {chat_id}")
-                        else:
-                            logger.warning(f"Failed to send push notification for chat {chat_id}")
-                            
-                    except Exception as notif_error:
-                        logger.error(f"Error in notification system: {notif_error}")
-                        # Continue even if notification fails
-                
                 return True
             except Exception as inner_e:
                 logger.error(f"Error in the message sending process: {inner_e}")
@@ -270,7 +250,7 @@ class FirebaseChat:
             logger.error(f"Error sending message to chat {chat_id}: {e}")
             logger.error(traceback.format_exc())
             return False
-        
+    
     @staticmethod
     def get_user_chats(user_id, user_type):
         """

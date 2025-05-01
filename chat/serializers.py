@@ -42,11 +42,3 @@ class SendMessageSerializer(serializers.Serializer):
     """Serializer for sending a new message"""
     chat_id = serializers.CharField()
     text = serializers.CharField()
-    
-class DeviceTokenSerializer(serializers.ModelSerializer):
-    """Serializer for device tokens"""
-    
-    class Meta:
-        model = DeviceToken
-        fields = ('id', 'patient_id', 'token', 'device_type', 'active', 'created_at', 'updated_at')
-        read_only_fields = ('id', 'created_at', 'updated_at')
